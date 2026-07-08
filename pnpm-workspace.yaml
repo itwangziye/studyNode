@@ -1,0 +1,11 @@
+allowBuilds:
+  '@prisma/engines': set this to true or false
+  bcrypt: set this to true or false
+  prisma: set this to true or false
+# pnpm 11 必须显式声明哪些包允许跑 postinstall 构建脚本
+# bcrypt: C++ 原生模块,必须编译(否则 import 时报错)
+# @prisma/engines + prisma: Prisma 查询引擎
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - "bcrypt"
+  - "prisma"

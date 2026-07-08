@@ -1,0 +1,6 @@
+console.log("A")
+setImmediate(() => console.log("B"))
+Promise.resolve().then(() => console.log("C"))
+process.nextTick(() => console.log("D"))
+setTimeout(() => console.log("E"), 0)
+console.log("F")

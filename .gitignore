@@ -1,0 +1,34 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+*.tsbuildinfo
+
+# 测试产物
+*.log
+archive/
+copy-*
+coverage/
+
+# 代码分析缓存
+.codegraph/
+
+# 系统
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+
+# 环境变量（含密钥，不进 git）
+.env
+.env.local
+.env.production
+
+# Prisma 生成的 Client（每次 prisma generate 重新生成，不进 git）
+**/src/generated/
+
+# pnpm 锁文件（子项目单独安装的锁，不进 git，只用根目录的）
+*/pnpm-lock.yaml
+*/*/pnpm-lock.yaml
