@@ -1,0 +1,8 @@
+allowBuilds:
+  '@prisma/engines': true
+  prisma: true
+# pnpm 11 必须显式声明哪些包允许跑 postinstall 构建脚本
+# @prisma/engines + prisma: Prisma 查询引擎,两者都要(漏 prisma 会 ERR_PNPM_IGNORED_BUILDS)
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - "prisma"

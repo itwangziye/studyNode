@@ -280,3 +280,112 @@ bash test-server.sh
 ## 阶段3 预告(待学)
 
 - NestJS 全栈(对标简历)
+
+---
+
+## 阶段3:NestJS 全栈(进行中 ⏳)
+
+### 关12 NestJS 三件套 + IoC
+⭐ **IoC 核心:构造函数声明即注入,不 `new`**
+```ts
+@Injectable()                       // 贴标签:我可被 IoC 容器管理
+export class TasksService {
+  constructor(private readonly prisma: PrismaService) {}  // 声明即注入
+  // 对比:裸 Node 要 new PrismaClient() + 手动传
+}
+```
+⭐ **三件套职责**:Module(装配)/ Controller(路由)/ Provider(逻辑),各司其职。
+
+### 关12.5 CRUD 装饰器全套
+⭐ **参数装饰器**:`@Body()` `@Param("id")` `@Query()` 取请求数据,替代 Express 的 `req.body/req.params`。
+⭐ **异常类替代 res.status()**:throw `NotFoundException`(404)/`BadRequestException`(400)/`ConflictException`(409,资源重复)——不要 `res.status(404).json()`。
+
+### 关13 PrismaService 集成
+⭐ **全局单例**:`@Global()` + extends `PrismaClient`,所有模块共享一个连接池。
+⭐ **driver adapter 模式**:Prisma 7 用 `@prisma/adapter-mariadb`,从 `DATABASE_URL` 解析 host/port/user/pass 传给 adapter。
+🔥 **MySQL 8 认证**:`allowPublicKeyRetrieval: true` 不加会报 RSA key 错误。
+🔥 **onModuleDestroy 必须写**:不写 `$disconnect()`,进程退出时连接池不释放。
+
+### 关14 JWT 鉴权(Guard)
+⭐ **Guard 替代中间件**:返回 boolean(true 放行 / false 自动 401),不用手写 `next()`。
+⭐ **Passport 工作流**:`JwtAuthGuard("jwt")` → 调 `JwtStrategy.validate(payload)` → 验 token → 成功挂 `req.user`。
+⭐ **import 不带 `.ts`**(与裸 Node 相反!):NestJS 用 tsc 编译,import 带 `.ts` 会报错。
+🔥🔥🔥 **漏 await(第 11+ 次)**:`bcrypt.compare` / `service.findOne()` 未 await → Promise 被当 truthy → 鉴权形同虚设。异步方法**条件反射加 await**。
+⭐ **`.env` 加载**:NestJS 入口只有 `main.ts`,必须 `import "dotenv/config"`。
+⭐ **防枚举攻击**:login 统一返回"邮箱或密码错误",不区分"用户不存在"vs"密码错"。
+
+### 关15 项目部署
+⭐ **ValidationPipe 三连**:`whitelist`(剔除多余字段)+ `forbidNonWhitelisted`(多余即报错)+ `transform`(自动类型转换)。
+⭐ **Dockerfile 多阶段**:builder 阶段编译 TS + `prisma generate`;prod 阶段只跑 JS,镜像更小。
+🔥 **host 两套**:Docker 内 `host.docker.internal:3306`,宿主机直跑 `localhost:3306`。本地跑前先确认 `.env`!
+🔥 **Mac Docker 不支持 `network_mode: host`** → 用端口映射 `3000:3000`。
+🔥 **pnpm 11 审批拦截** → `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 声明 `bcrypt`/`prisma`/`@prisma/engines`。
+🔥🔥🔥 **改 yaml 不够,必须跑 `pnpm approve-builds`**(Day 17 第 3 次踩)
+- `pnpm-workspace.yaml` 改了 `onlyBuiltDependencies`,但 pnpm 把审批状态缓存在 store 里,改文件不生效
+- `pnpm run start` / `nest start` 底层触发 `runDepsStatusCheck`,发现未审批直接退出 → `ERR_PNPM_IGNORED_BUILDS`
+- **解法①(正式)**:`pnpm approve-builds` 交互式审批,一次性永久解决
+- **解法②(绕过)**:跳过 `pnpm run`,直接 `npx tsc -p tsconfig.build.json && node dist/main.js`
+- ⚠️ nest-app 的 `pnpm-workspace.yaml` 要和根目录保持一致,别漏 `prisma`(Day 17 漏过)
+
+---
+
+## 阶段4:NestJS 进阶 + Redis(进行中 ⏳)
+
+### NestJS 组件执行顺序(必背)
+```
+Request → Middleware → Guard → Interceptor(前) → Pipe → Controller → Interceptor(后) → Response
+                                          ↓ 异常冒泡 ↓
+                                    ExceptionFilter 接住
+```
+记忆口诀:**M-G-I-P-C-I-F**(中间件-守卫-拦截器-管道-控制器-拦截器-过滤器)。
+
+### 关16 全局异常过滤器
+⭐⭐⭐ **`@Catch()` 空括号 vs `@Catch(HttpException)`**(Day 16 追问盲区)
+- `@Catch()` 空 = 捕获**所有**异常(含 HttpException + 未知 Error)
+- `@Catch(HttpException)` = 只捕 HTTP 异常;**未知错误(DB 炸/代码 bug)会漏给框架默认处理 → 500 + 泄露内部堆栈给客户端**
+- 生产用 `@Catch()` 空,确保所有异常都走脱敏逻辑。
+
+⭐ **getResponse() 两种形态**:
+- `throw new HttpException('msg', 400)` → 返回字符串 `'msg'`
+- 内置子类(NotFoundException 等) → 返回 `{ statusCode, message, error }`
+- DTO 校验失败时 `message` 是**数组** `["title must be a string", ...]` → 需 `.join('; ')` 合并成一句,否则前端拿到数组不好展示。
+
+🔥🔥 **安全红线:内部异常细节绝不泄露给客户端**
+- `exception.stack`(堆栈)、数据库错误、SQL 语句都是攻击者情报
+- 泄露堆栈 → 暴露代码文件路径/行号/依赖版本 → 攻击者据此找已知漏洞
+- 正确做法:客户端只给脱敏文案("服务器内部错误"),详情写 `Logger.error()` 进服务端日志。
+
+⭐ **ArgumentsHost 的作用**:执行上下文抽象,`host.switchToHttp()` 拿 req/res。因为 NestJS 不绑定协议(还能跑 WS/RPC),所以要显式切换。
+
+### 关17 响应拦截器(Interceptor)
+⭐⭐⭐ **拦截器是唯一"双向夹击"组件**:Controller 执行前后都运行
+```
+Request → Guard → ┌─ Interceptor(前) ─┐ → Pipe → Controller → ┌─ Interceptor(后) ─┐ → Response
+                  │ 记开始时间         │                        │ tap打日志/map包壳  │
+                  └───────────────────┘                        └───────────────────┘
+```
+⭐ **四个核心 API**:
+- `next.handle()` → 返回 RxJS Observable,触发 Controller 执行(类似 Express next() 但不同)
+- `.pipe()` → 给数据流加处理环节(类似 Node Stream 的 pipe)
+- `tap(data => ...)` → 透明窥探,看数据但不改(打日志)
+- `map(data => ...)` → 改造数据(把裸 data 包成 {code,message,data})
+
+⭐ **过滤器管失败,拦截器管成功**——两者配对才有完整响应规范:
+- 成功 → 拦截器的 map 包成 `{code:200, message:'success', data}`
+- 失败 → 过滤器包成 `{code:<状态码>, message, data:null}`
+- 异常会**跳过**拦截器的 map,直接被过滤器接住。
+
+🔥 **改 main.ts 别漏注册**(Day 17 踩过):加拦截器时手滑删了 `app.useGlobalFilters(...)`,导致过滤器失效,异常回到 NestJS 默认格式 `{statusCode,message,error}`。改完全局组件要数一遍:Filters + Interceptors + Pipes 都在。
+
+⭐ **全局组件注册才生效**:Filter/Interceptor/Pipe 写了文件但不 `app.useGlobalXxx()` 注册 = 死代码,不生效。
+
+⭐⭐⭐ **异常让 Observable 断流,跳过 map**(Day 17 追问盲区)
+- Controller 抛异常 → `next.handle()` 的 Observable 进入 **error 状态** → 数据流中断
+- `map` 只在流正常吐数据时执行 → 流 error 了,map 收不到数据,不执行
+- 异常直接冒泡被 `ExceptionFilter` 接住 → 这就是"过滤器管失败、拦截器管成功"的技术原理。
+
+⭐⭐⭐ **pipe 顺序决定数据形态**(Day 17 追问盲区)
+- RxJS `pipe` 从左到右串联,数据依次经过每个操作符(类比 Node Stream 的 .pipe())
+- `pipe(tap, map)`:tap 先看原始 data → map 再包壳。tap 看到的是 Controller 原始返回值。
+- `pipe(map, tap)`:map 先包壳 → tap 再看。tap 看到的是包壳后的 `{code,message,data}`,不是原始值!
+- 想打原始数据日志必须 tap 在 map 前;想打最终响应日志则 tap 在 map 后。

@@ -448,3 +448,52 @@ JwtAuthGuard extends AuthGuard("jwt") {
 
 > 今天是单日产出最大的一天——5 关连破,从 Express 到 NestJS 完整全栈只用了 6 天。你现在的代码结构和面试能力,已经可以投 14-18K 的全栈岗了。剩下最后一关部署,然后就是接真实项目实战打磨。明天写完关 15,这个教程就到了你的毕业时刻。
 
+
+---
+
+## 2026-07-09 (Day 7) — 阶段4 启动:关 16-17 完成 ✅
+
+### 今日过关:2 关
+
+| 关 | 主题 | 用时感 | 掌握度 |
+|---|---|---|---|
+| 16 | 全局异常过滤器 | 中 | 核心掌握,安全脱敏意识追问时偏浅 |
+| 17 | 响应拦截器 | 慢 | 代码会写,pipe 顺序追问答"不清楚",补测后才通过 |
+
+### 📚 今天学到的核心知识
+
+1. **NestJS 组件执行顺序**(必背):`Middleware → Guard → Interceptor(前) → Pipe → Controller → Interceptor(后) → Response`,异常冒泡被 ExceptionFilter 接住。口诀 M-G-I-P-C-I-F。
+2. **全局异常过滤器**:`@Catch()` 空括号兜底所有异常(含未知错误),`@Catch(HttpException)` 会漏掉 DB 炸/代码 bug → 泄露堆栈给客户端。安全红线:内部异常脱敏成固定文案,堆栈只进 `Logger.error()`。
+3. **响应拦截器双向夹击**:Controller 执行前后都运行。`next.handle()` 返回 RxJS Observable,`tap` 看数据不改(打日志),`map` 改造数据(包壳成 `{code,message,data}`)。
+4. **过滤器管失败,拦截器管成功**:异常让 Observable 进入 error 状态断流,`map` 不执行,异常直接冒泡到过滤器。这是两者分工的技术原理。
+5. **RxJS pipe 顺序**:`pipe` 从左到右串联,前一个操作符的输出 = 后一个操作符的输入。`tap` 在 `map` 前看到原始数据,在后看到包壳后的数据。
+
+### 🔥 今天踩过并记住的坑
+
+1. **改 main.ts 漏注册过滤器**(关17):加 `app.useGlobalInterceptors(...)` 时手滑覆盖了 `app.useGlobalFilters(...)` → 异常回到 NestJS 默认格式。教训:改完全局组件要数一遍 Filters+Interceptors+Pipes 都在。全局组件**注册才生效**,文件存在不注册 = 死代码。
+2. **pnpm 11 审批拦截(第 3 次)**:改 `pnpm-workspace.yaml` 不够,必须跑 `pnpm approve-builds`。`pnpm run start` 底层触发 deps 检查,未审批直接退出。绕过法:直接 `npx tsc + node dist/main.js`。nest-app 的 workspace yaml 还漏了 `prisma`(已补)。
+3. **host.docker.internal vs localhost**:本地直跑 node 要用 localhost,Docker 内才用 host.docker.internal。今天 MySQL pool timeout 就是 host 写错。
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **`@Catch()` 空括号 vs `@Catch(HttpException)` 的后果** —— 答出"漏掉未知错误"但没说清"会泄露堆栈"
+- [ ] **exception.stack 泄露的危害** —— 只答"拿到信息",没说出文件路径/依赖版本/SQL 片段等具体情报
+- [ ] **RxJS pipe 顺序** —— 直接答"不清楚",补讲 + 补测后通过
+
+### 📈 能力跃迁
+
+| 维度 | Day 6 | Day 7 |
+|---|---|---|
+| 响应规范 | 裸数据 + NestJS 默认错误格式(三套长相) | ✅ 统一 `{code,message,data}` 成功失败一套 |
+| 异常处理 | throw 异常类(框架转) | ✅ 自定义全局过滤器,脱敏 + 日志双全 |
+| 组件认知 | Guard/Pipe/Module | ✅ 补齐 Interceptor + Filter,6 大组件全掌握 |
+
+### 🎯 明天计划
+
+- 开工先复习:三个追问盲区(`@Catch()` 空括号后果、stack 泄露危害、pipe 顺序)
+- 进 **关 18:自定义管道(Pipe)** —— ParseIntPipe 替代手写 Number()+判NaN
+- 后续:关 19 RBAC 权限 → 关 20 Swagger → 关 21 @CurrentUser → 关 22-25 Redis 实战
+
+### 💬 一句话总结
+
+> 今天打开了阶段 4"NestJS 进阶"的大门。关 16-17 是配对的两半——过滤器管失败、拦截器管成功,合起来把 API 响应规范统一成 `{code,message,data}`。代码都自己写、自己测、自己修了 bug(漏注册过滤器)。pipe 顺序这个盲区补测过关,说明追问机制在起作用——答"不清楚"就补讲到会为止,不蒙混过关。明天复习三个盲区后继续关 18。

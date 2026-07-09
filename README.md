@@ -56,7 +56,14 @@
 | 12.5 | CRUD 装饰器全套 | ✅ | @Post/@Body/@Param、NotFoundException、BadRequestException |
 | 13 | PrismaService 集成 | ✅ | PrismaService 全局单例注入、真 MySQL 持久化 |
 | 14 | JWT 鉴权(Guard) | ✅ | JwtModule/PassportStrategy、@UseGuards(JwtAuthGuard)、ConflictException |
-| 15 | 项目部署 | ⬜ 待开始 | Docker / PM2 / 线上部署 |
+| 15 | 项目部署 | ✅ | ValidationPipe校验、CORS、Dockerfile多阶段构建、PM2进程管理、docker-compose |
+
+### 阶段4:NestJS 进阶 + Redis ⏳ 进行中 (2026-07-09)
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 16 | 全局异常过滤器 | ✅ | ExceptionFilter、@Catch()空括号兜底所有异常、安全脱敏不泄露堆栈 |
+| 17 | 响应拦截器 | ✅ | Interceptor双向夹击、tap打日志/map包壳、与过滤器配对统一响应规范 |
 
 ---
 

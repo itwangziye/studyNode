@@ -1,5 +1,9 @@
-// 登录接口的数据形状契约(对应你关 11 的 login 参数)
+import { IsEmail, IsString, MaxLength, MinLength } from "class-validator"
 export class LoginDto {
-  email: string
-  password: string
+  @IsEmail()
+  email!: string
+
+  @IsString()
+  @MinLength(6)
+  password!: string
 }
