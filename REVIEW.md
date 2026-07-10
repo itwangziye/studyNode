@@ -340,10 +340,12 @@ Request → Middleware → Guard → Interceptor(前) → Pipe → Controller �
 记忆口诀:**M-G-I-P-C-I-F**(中间件-守卫-拦截器-管道-控制器-拦截器-过滤器)。
 
 ### 关16 全局异常过滤器
-⭐⭐⭐ **`@Catch()` 空括号 vs `@Catch(HttpException)`**(Day 16 追问盲区)
-- `@Catch()` 空 = 捕获**所有**异常(含 HttpException + 未知 Error)
-- `@Catch(HttpException)` = 只捕 HTTP 异常;**未知错误(DB 炸/代码 bug)会漏给框架默认处理 → 500 + 泄露内部堆栈给客户端**
+⭐⭐⭐ **`@Catch()` 空括号 vs `@Catch(HttpException)`**(连续 3 次盲区,Day 8 已补讲)
+- `@Catch(类型)` 内部用 **`instanceof`** 判断:`exception instanceof HttpException` 为 true 才接
+- `@Catch()` 空 = 不做类型判断,捕获**所有**异常(含 HttpException + 未知 Error)
+- `@Catch(HttpException)` = 只接 HttpException 及其子类;普通 Error(`throw new Error('db挂了')`)**instanceof 为 false → 过滤器不接 → 漏给内置默认过滤器 → 堆栈直接泄露客户端**
 - 生产用 `@Catch()` 空,确保所有异常都走脱敏逻辑。
+- ⚠️ Day 9 复习必抽查:**要答出 `instanceof` 这个关键词**。
 
 ⭐ **getResponse() 两种形态**:
 - `throw new HttpException('msg', 400)` → 返回字符串 `'msg'`
@@ -389,3 +391,66 @@ Request → Guard → ┌─ Interceptor(前) ─┐ → Pipe → Controller →
 - `pipe(tap, map)`:tap 先看原始 data → map 再包壳。tap 看到的是 Controller 原始返回值。
 - `pipe(map, tap)`:map 先包壳 → tap 再看。tap 看到的是包壳后的 `{code,message,data}`,不是原始值!
 - 想打原始数据日志必须 tap 在 map 前;想打最终响应日志则 tap 在 map 后。
+
+### 关18 自定义管道(Pipe)
+⭐ **Pipe 的位置和职责**
+```
+Interceptor(前) → ┌─ Pipe ─┐ → Controller → Interceptor(后)
+                  │ 校验值  │
+                  │ 改造值  │
+                  │ 抛异常  │
+                  └────────┘
+```
+- 做两件事:**校验**(不合法抛 BadRequestException)+ **改造**(string 转 number 等)
+
+⭐⭐⭐ **Pipe 的三种用法分工**(Day 18 核心认知):
+- `ValidationPipe` → 管 **DTO(@Body 对象)** 的校验和转换
+- 内置 `ParseIntPipe`/`ParseBoolPipe` → 管 **@Param/@Query 单参数** 的转换
+- 自定义 Pipe → 管 **业务规则** 校验(敏感词、权限、格式)
+
+🔥🔥🔥 **ValidationPipe.transform:true 的副作用**(Day 18 踩的坑):
+- `transform: true` 是总开关,同时转 DTO 和单参数
+- 单参数场景:Controller 声明 `id: number`,框架提前把 `"abc"` → `NaN` 再传给自定义 Pipe → 自定义 Pipe 收到的是 NaN 不是 "abc" → 错误消息显示 "NaN 不是合法数字"
+- **解法**:单参数转换用**内置 `ParseIntPipe`**(`import { ParseIntPipe } from "@nestjs/common"`),它和 ValidationPipe 时序由框架协调,不会丢原始值。
+
+⭐ **PipeTransform 接口**:实现 `transform(value, metadata)` 方法,返回处理后的值或抛异常。自己写 Pipe 价值在**业务级校验**,别重造 ParseIntPipe。
+
+### 关19 RBAC 角色权限(求职硬通货)
+⭐ **RBAC 三要素**:用户→有角色(role)→角色对应权限→能否访问资源。比"登录/没登录"两层多一层"什么角色"。
+
+⭐⭐⭐ **自定义装饰器 @Roles + Reflector 存取元数据**
+```ts
+// 装饰器:用 SetMetadata 把角色存到接口元数据
+export const ROLES_KEY = 'roles'
+export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles)
+
+// Guard:用 Reflector 读出来
+const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
+  context.getHandler(),   // 先找方法级
+  context.getClass(),     // 再找类级
+])
+```
+- 装饰器和 Guard 必须用**同一个 ROLES_KEY** 才能对上(暗号)。
+
+⭐ **RolesGuard 关键逻辑**(Day 19 踩过的逻辑 bug):
+- `if (!requiredRoles) return true` —— **没贴 @Roles 的接口直接放行**(不是 false!false 会锁死整个项目)
+- 贴了 @Roles 的才比对角色,不匹配抛 `ForbiddenException`(403)。
+
+⭐ **401 vs 403 vs 404 的区别**(Day 19 追问盲区,答错过):
+- 401 Unauthorized = **没登录**(token 缺失/失效/无效)→ JwtAuthGuard 管
+- 403 Forbidden = **登录了但没权限**(角色不够)→ RolesGuard 管
+- 404 Not Found = **资源不存在**(查不到数据)→ NotFoundException,和登录/权限无关!
+- ⚠️ 别把 404(资源不存在)和 401(没登录)搞混!"查询不到数据"是 404 不是 401。
+- 记忆口诀:**401 问"你是谁",403 说"你不能",404 说"没有这东西"**。
+
+⭐ **role 从哪来**:token 不装 role(不安全),JwtStrategy.validate 查数据库拿 role,挂到 req.user。RolesGuard 从 req.user.role 读。
+```ts
+async validate(payload: JwtPayload) {
+  const user = await this.prisma.user.findUnique({ where:{id:payload.userId}, select:{role:true} })
+  return { userId: payload.userId, email: payload.email, role: user?.role }
+}
+```
+
+⭐ **Guard 串联**:`@UseGuards(JwtAuthGuard, RolesGuard)` —— 先验登录,再验角色,顺序重要。
+
+🔥 **prisma db execute 的表名转义坑**(Day 19):`\`User\`` 转义不对会导致 SQL 静默失败(exit 0 但没改数据)。改数据用 `prisma.user.update` 或 node 脚本,别用 db execute 改数据。

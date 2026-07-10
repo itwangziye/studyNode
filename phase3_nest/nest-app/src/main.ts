@@ -23,6 +23,9 @@ async function bootstrap() {
       whitelist: true,              // 自动剔除多余字段
       forbidNonWhitelisted: true,   // 多余字段直接报错
       transform: true,              // 自动类型转换
+      transformOptions: {
+        enableImplicitConversion: true
+      }
     })
   )
 

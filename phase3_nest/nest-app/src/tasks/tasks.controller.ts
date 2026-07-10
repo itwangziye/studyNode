@@ -1,6 +1,8 @@
-import { Controller, Get, Param, Post, Body, Delete, NotFoundException, BadRequestException, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, Post, Body, Delete, NotFoundException, BadRequestException, UseGuards, ParseIntPipe } from "@nestjs/common";
 import { TasksService } from "./tasks.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RolesGuard } from "../common/guards/roles.guard";
+import { Roles } from "../common/decorators/roles.decorator";
 
 
 @Controller("tasks")
@@ -13,12 +15,8 @@ export class TaskController {
     }
 
     @Get(":id")
-    async findOne(@Param("id")id: string) {
-        const fId = Number(id);
-        if (Number.isNaN(fId)) {
-            throw new BadRequestException("ID不合法")
-        }
-        const task = await this.tasksService.findOne(fId);
+    async findOne(@Param("id", ParseIntPipe)id: number) {
+        const task = await this.tasksService.findOne(id);
         if (!task) throw new NotFoundException("任务不存在")
         return task
     }
@@ -33,13 +31,10 @@ export class TaskController {
     }
 
     @Delete(":id") 
-    @UseGuards(JwtAuthGuard)
-    async delete(@Param("id") id: string) {
-        const fid = Number(id);
-        if (Number.isNaN(fid)) {
-            return false
-        }
-        const success = await this.tasksService.remove(fid);
+    @Roles("admin")
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    async delete(@Param("id", ParseIntPipe) id: number) {
+        const success = await this.tasksService.remove(id);
         if (success) {
             return true
         }

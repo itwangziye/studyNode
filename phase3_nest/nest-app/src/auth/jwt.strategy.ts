@@ -6,6 +6,7 @@
 import { Injectable } from "@nestjs/common"
 import { PassportStrategy } from "@nestjs/passport"
 import { ExtractJwt, Strategy } from "passport-jwt"
+import { PrismaService } from "../prisma/prisma.service"
 
 // payload 的形状 = 你签发 token 时放的数据
 interface JwtPayload {
@@ -17,7 +18,7 @@ interface JwtPayload {
 export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
   //                              ↑ 用 passport-jwt 的 Strategy
   //                                          ↑ 名字 "jwt",跟 Guard 里对应
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     super({
       // 从请求头 Authorization: Bearer xxx 自动提取 token
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -32,6 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
   // payload = jwt.verify 解出的内容({ userId, email })
   // return 的值会被框架挂到 req.user 上
   async validate(payload: JwtPayload) {
-    return { userId: payload.userId, email: payload.email }
+    const user =  await this.prisma.user.findUnique({where: {id: payload.userId}, select: {role: true}});
+    return { userId: payload.userId, email: payload.email, role: user?.role}
   }
 }

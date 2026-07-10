@@ -64,6 +64,8 @@
 |---|---|---|---|
 | 16 | 全局异常过滤器 | ✅ | ExceptionFilter、@Catch()空括号兜底所有异常、安全脱敏不泄露堆栈 |
 | 17 | 响应拦截器 | ✅ | Interceptor双向夹击、tap打日志/map包壳、与过滤器配对统一响应规范 |
+| 18 | 自定义管道 | ✅ | PipeTransform校验+改造、内置ParseIntPipe替代手写Number()、ValidationPipe.transform对单参数的副作用 |
+| 19 | RBAC 角色权限 | ✅ | User加role字段、@Roles装饰器(SetMetadata)、RolesGuard读元数据比对角色、JwtStrategy查库取role、401/403区分 |
 
 ---
 
