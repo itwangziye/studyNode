@@ -66,6 +66,7 @@
 | 17 | 响应拦截器 | ✅ | Interceptor双向夹击、tap打日志/map包壳、与过滤器配对统一响应规范 |
 | 18 | 自定义管道 | ✅ | PipeTransform校验+改造、内置ParseIntPipe替代手写Number()、ValidationPipe.transform对单参数的副作用 |
 | 19 | RBAC 角色权限 | ✅ | User加role字段、@Roles装饰器(SetMetadata)、RolesGuard读元数据比对角色、JwtStrategy查库取role、401/403区分 |
+| 20 | Swagger 文档 | ✅ | @nestjs/swagger、DocumentBuilder配置、SwaggerModule.setup、@ApiTags/@ApiOperation/@ApiBearerAuth装饰器 |
 
 ---
 

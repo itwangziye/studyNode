@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common'    // ← 要 import 什
 import { AppModule } from './app.module'
 import { TransformInterceptor } from './common/interceptors/transform.interceptor'
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter'
+import {SwaggerModule, DocumentBuilder} from '@nestjs/swagger'
 
 
 
@@ -28,6 +29,15 @@ async function bootstrap() {
       }
     })
   )
+
+    const config = new DocumentBuilder()
+        .setTitle('Task API')
+        .setDescription('任务管理接口文档')
+        .setVersion('1.0')
+        .addBearerAuth()
+        .build()
+    const document = SwaggerModule.createDocument(app, config)
+    SwaggerModule.setup('api-docs', app, document)
 
   // ③ 启动
   const port = process.env.PORT ?? 3000

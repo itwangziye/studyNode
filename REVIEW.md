@@ -454,3 +454,24 @@ async validate(payload: JwtPayload) {
 ⭐ **Guard 串联**:`@UseGuards(JwtAuthGuard, RolesGuard)` —— 先验登录,再验角色,顺序重要。
 
 🔥 **prisma db execute 的表名转义坑**(Day 19):`\`User\`` 转义不对会导致 SQL 静默失败(exit 0 但没改数据)。改数据用 `prisma.user.update` 或 node 脚本,别用 db execute 改数据。
+
+### 关20 Swagger 自动 API 文档
+⭐ **Swagger 三步配置**:
+```ts
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
+// main.ts,app.listen 之前:
+const config = new DocumentBuilder()
+  .setTitle('Task API').setDescription('...').setVersion('1.0')
+  .addBearerAuth()              // 启用 Bearer token(对应 JWT)
+  .build()
+const document = SwaggerModule.createDocument(app, config)
+SwaggerModule.setup('api-doc', app, document)   // 访问路径 /api-doc
+```
+
+⭐ **文档装饰器**(贴在 Controller 上补充接口信息):
+- `@ApiTags('任务')` —— 类级,接口分组
+- `@ApiOperation({ summary: '创建任务' })` —— 方法级,接口描述
+- `@ApiBearerAuth()` —— 标记接口需要 token
+
+🔥 **改 main.ts 必须重启**(Day 20 踩坑):NestJS 启动时才把路由注册进 Express。改了 `SwaggerModule.setup()` 但没重启,路由表里没有 `/api-doc` → 404。watch 模式对配置类代码热更新有时不生效。
+🔥 **端口占用排查**:`lsof -i:3000` 看谁占着,`start:debug` 报 `EADDRINUSE` 说明有旧进程,先 `lsof -ti:3000 | xargs kill -9`。
