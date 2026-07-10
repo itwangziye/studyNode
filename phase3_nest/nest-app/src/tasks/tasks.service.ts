@@ -11,8 +11,8 @@ export class TasksService {
     async findOne(id: number) {
         return await this.prisma.task.findUnique({where: {id}})
     }
-    async create(title: string) {
-        return await this.prisma.task.create({data: {title}})
+    async create(title: string, userId: number) {
+        return await this.prisma.task.create({data: {title, userId}})
     }
     async remove(id: number) {
         const {count} = await this.prisma.task.deleteMany({ where: { id } })

@@ -497,3 +497,65 @@ JwtAuthGuard extends AuthGuard("jwt") {
 ### 💬 一句话总结
 
 > 今天打开了阶段 4"NestJS 进阶"的大门。关 16-17 是配对的两半——过滤器管失败、拦截器管成功,合起来把 API 响应规范统一成 `{code,message,data}`。代码都自己写、自己测、自己修了 bug(漏注册过滤器)。pipe 顺序这个盲区补测过关,说明追问机制在起作用——答"不清楚"就补讲到会为止,不蒙混过关。明天复习三个盲区后继续关 18。
+
+---
+
+## 2026-07-10 (Day 8) — NestJS 进阶全通关:关 16-21 完成 ✅
+
+### 今日过关:6 关(单日新高)
+
+| 关 | 主题 | 用时感 | 掌握度 |
+|---|---|---|---|
+| 16 | 全局异常过滤器 | 快(复习) | @Catch() instanceof 机制连续 3 次盲区,已补讲 |
+| 17 | 响应拦截器 | 快(补测) | pipe 顺序补测通过 |
+| 18 | 自定义管道 | 中 | NaN bug 暴露 ValidationPipe.transform 副作用 |
+| 19 | RBAC 角色权限 | 慢 | 核心做对,404/401 概念混淆已纠正 |
+| 20 | Swagger 文档 | 快 | 404 是端口占用坑,非代码问题 |
+| 21 | @CurrentUser 装饰器 | 快 | 一次过,概念清晰 |
+
+### 📚 今天学到的核心知识(6 大组件全覆盖)
+
+1. **NestJS 6 大组件执行顺序**(必背):`Middleware → Guard → Interceptor(前) → Pipe → Controller → Interceptor(后)`,异常冒泡被 ExceptionFilter 接住。口诀 M-G-I-P-C-I-F。
+2. **全局异常过滤器**:`@Catch()` 空括号用 `instanceof` 兜底所有异常(含未知 Error),脱敏不泄露堆栈。
+3. **响应拦截器**:Controller 前后双向夹击,`tap` 打日志/`map` 包壳。异常让 Observable 断流跳过 map,落到过滤器。
+4. **RxJS pipe 顺序**:从左到右,前一步输出 = 后一步输入。
+5. **自定义管道**:`PipeTransform.transform(value)`。内置 `ParseIntPipe` 管单参数转换,自定义 Pipe 管业务规则。
+6. **ValidationPipe.transform 副作用**:会提前把单参数 "abc" 转成 NaN,搞乱自定义 Pipe。单参数转换用内置 ParseIntPipe。
+7. **RBAC**:`@Roles` + `RolesGuard` + `Reflector` 存取元数据。JwtStrategy 查库取 role 挂 req.user。
+8. **401 vs 403 vs 404**:401 没登录/403 没权限/404 资源不存在。口诀"你是谁/你不能/没这东西"。
+9. **Swagger**:`DocumentBuilder` 配置 + `SwaggerModule.setup` + `@ApiTags/@ApiOperation` 装饰器。改 main.ts 必须手动重启。
+10. **@CurrentUser()**:`createParamDecorator` 只返回 user,替代 @Req() 整个 request,解耦 Controller。
+
+### 🔥 今天踩过并记住的坑
+
+1. **改 main.ts 漏注册过滤器**(关17):加拦截器时覆盖了 useGlobalFilters → 全局组件注册才生效。
+2. **ValidationPipe 把 "abc" 转成 NaN**(关18):transform:true 对单参数的副作用,用内置 ParseIntPipe 解决。
+3. **RolesGuard `return false` 锁死项目**(关19):没贴 @Roles 的接口应 return true 放行。
+4. **404 和 401 概念混淆**(关19):"查询不到数据"是 404 不是 401,已纠正。
+5. **Swagger 404 是端口占用**(关20):旧进程占 3000,改完没重启命中的是旧进程。
+6. **prisma db execute 表名转义坑**(关19):反引号转义不对导致 SQL 静默失败,改数据用 prisma.user.update。
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **`@Catch()` 用 `instanceof` 判断**(连续 3 次盲区,明天必抽查这个词)
+- [ ] **401/403/404 区别**(答错过,已纠正)
+- [ ] **没 Guard 时 @CurrentUser 拿到 undefined**(Q3 漏答)
+
+### 📈 能力跃迁
+
+| 维度 | Day 7 | Day 8 |
+|---|---|---|
+| NestJS 组件 | Filter + Interceptor(2/6) | ✅ 6 大组件全掌握 |
+| 权限控制 | 登录/没登录两层 | ✅ RBAC 三层(401/403/200) |
+| API 规范 | 统一响应格式 | ✅ + Swagger 可交互文档 |
+| Controller 解耦 | @Req() 拿整个 request | ✅ @CurrentUser() 干净注入 |
+
+### 🎯 明天计划
+
+- 开工先复习三个盲区(@Catch instanceof、401/403/404、@CurrentUser undefined)
+- 进 **关 22:Redis 集成 + 缓存策略** —— 阶段 4 下半场开始
+- 先确认 Redis 环境(brew install redis / 启动)
+
+### 💬 一句话总结
+
+> 今天单日破 6 关,NestJS 6 大组件全部学完——从异常处理到 RBAC 权限到 Swagger 文档到自定义装饰器,一个生产级后端该有的能力都具备了。最值钱的是踩了 6 个真实坑(漏注册/transform 副作用/return false/概念混淆/端口占用/SQL 转义),这些都是面试和实战才会遇到的。明天进 Redis 实战,把缓存/限流/排行榜补上,后端深度就到位了。

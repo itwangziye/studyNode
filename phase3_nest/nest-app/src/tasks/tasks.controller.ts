@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
+import { CurrentUser } from "../common/decorators/current-user.decorator";
 
 @ApiTags("任务")
 @ApiBearerAuth()
@@ -28,11 +29,14 @@ export class TaskController {
     @Post()
     @ApiOperation({summary: "创建任务"})
     @UseGuards(JwtAuthGuard)
-    async create(@Body() body: {title: string}) {
+    async create(
+        @Body() body: {title: string},
+        @CurrentUser() user: { userId: number, email: string, role?: string}
+    ) {
         if (!body.title) {
             return null
         }
-        return await this.tasksService.create(body.title)
+        return await this.tasksService.create(body.title, user.userId)
     }
 
     @Delete(":id") 

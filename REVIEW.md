@@ -475,3 +475,32 @@ SwaggerModule.setup('api-doc', app, document)   // 访问路径 /api-doc
 
 🔥 **改 main.ts 必须重启**(Day 20 踩坑):NestJS 启动时才把路由注册进 Express。改了 `SwaggerModule.setup()` 但没重启,路由表里没有 `/api-doc` → 404。watch 模式对配置类代码热更新有时不生效。
 🔥 **端口占用排查**:`lsof -i:3000` 看谁占着,`start:debug` 报 `EADDRINUSE` 说明有旧进程,先 `lsof -ti:3000 | xargs kill -9`。
+
+### 关21 自定义参数装饰器 @CurrentUser()
+⭐ **参数装饰器原理**:NestJS 的 `@Body`/`@Param`/`@Query` 内部都调 `createParamDecorator()`。它接收一个函数,函数能拿 `ExecutionContext`,return 的值就是参数值。
+```ts
+// 内置 @Req() 简化原理:返回整个 request
+export const Req = createParamDecorator((data, ctx) => ctx.switchToHttp().getRequest())
+
+// 自定义 @CurrentUser():只返回 user,不返回整个 request
+export const CurrentUser = createParamDecorator(
+  (data: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest().user
+)
+```
+
+⭐ **@CurrentUser vs @Req 的区别**:
+- `@Req()` 注入整个 request → Controller 和 Express 框架耦合(换框架全废)
+- `@CurrentUser()` 只拿 user → 解耦 + 类型安全 + 可复用
+
+⭐ **用法**:Guard 验证后把 user 挂到 req.user → Controller 用 `@CurrentUser() user` 直接拿。
+```ts
+@Post()
+@UseGuards(JwtAuthGuard)
+async create(@Body() body, @CurrentUser() user: { userId: number }) {
+  return this.tasksService.create(body.title, user.userId)  // 干净,不碰 req
+}
+```
+
+⭐ **自定义装饰器两类**(别混淆):
+- **参数装饰器**(`createParamDecorator`):给方法注入参数值,如 `@CurrentUser()`
+- **方法/类装饰器**(`SetMetadata`):给接口贴元数据标签,如关19的 `@Roles()`
