@@ -58,7 +58,7 @@
 | 14 | JWT 鉴权(Guard) | ✅ | JwtModule/PassportStrategy、@UseGuards(JwtAuthGuard)、ConflictException |
 | 15 | 项目部署 | ✅ | ValidationPipe校验、CORS、Dockerfile多阶段构建、PM2进程管理、docker-compose |
 
-### 阶段4:NestJS 进阶 + Redis ⏳ 进行中 (2026-07-09)
+### 阶段4:NestJS 进阶 + Redis ✅ 已完成 (2026-07-09 ~ 07-14)
 
 | 关 | 主题 | 状态 | 关键收获 |
 |---|---|---|---|
@@ -68,6 +68,10 @@
 | 19 | RBAC 角色权限 | ✅ | User加role字段、@Roles装饰器(SetMetadata)、RolesGuard读元数据比对角色、JwtStrategy查库取role、401/403区分 |
 | 20 | Swagger 文档 | ✅ | @nestjs/swagger、DocumentBuilder配置、SwaggerModule.setup、@ApiTags/@ApiOperation/@ApiBearerAuth装饰器 |
 | 21 | 自定义参数装饰器 | ✅ | createParamDecorator、@CurrentUser()替代@Req()拿用户、解耦Controller与Express |
+| 22 | Redis 集成 + 缓存策略 | ✅ | RedisService全局单例、Cache-Aside旁路缓存、findAll加缓存+TTL |
+| 23 | 缓存三大问题防护 | ✅ | 穿透(缓存空对象)、击穿(SET NX分布式锁单飞)、雪崩(TTL随机抖动) |
+| 24 | 限流拦截器(滑动窗口) | ✅ | ThrottleGuard、Sorted Set滑动窗口、ZREMRANGEBYSCORE清旧+ZCARD计数+ZADD记录、429拒绝 |
+| 25 | Sorted Set 排行榜 | ✅ | zIncrBy加分+zRevRange取TopN、completeTask+getRanking、路由顺序坑、Redis字符串+JS加法陷阱 |
 
 ---
 

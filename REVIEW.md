@@ -504,3 +504,154 @@ async create(@Body() body, @CurrentUser() user: { userId: number }) {
 ⭐ **自定义装饰器两类**(别混淆):
 - **参数装饰器**(`createParamDecorator`):给方法注入参数值,如 `@CurrentUser()`
 - **方法/类装饰器**(`SetMetadata`):给接口贴元数据标签,如关19的 `@Roles()`
+
+---
+
+## 阶段4 下半场:Redis 实战(关 22-25)
+
+### 关22 Redis 集成 + Cache-Aside 缓存
+⭐ **Cache-Aside(旁路缓存)模式 —— 缓存最经典模式**
+```
+请求 → 查 Redis 缓存 → 命中?返回(快)
+                      未命中 → 查 MySQL → 写回 Redis(带TTL) → 返回
+```
+
+⭐ **RedisService 全局单例**(对标 PrismaService):
+- `@Global() + @Module` + `@Injectable`,所有模块注入同一个实例
+- 封装 `get/set/del`,带 `onModuleDestroy` 断开连接
+- `set(key, value, ttl)` 用 `EX` 选项设过期秒数
+
+⭐ **Redis 只存字符串**:存对象要 `JSON.stringify`,取出来要 `JSON.parse`。
+⭐ **缓存 key 命名规范**:用冒号分隔层级 `task:all` / `task:1` / `task:lock:1`(不用下划线)。Redis 客户端工具按冒号折叠成树。
+
+🔥 **cache vs cash 拼写**(Day 9 反复踩):`cache` = 缓存,`cash` = 现金。`CACHE_KEY` 别少 E。
+
+⭐ **fire-and-forget**(可讨论):写缓存 `this.redis.set(...)` 不加 await,返回快但 Redis 挂了会报 unhandled rejection。生产用要配 try-catch。
+
+### 关23 缓存三大问题防护(高并发面试必考)
+
+⭐⭐⭐ **三大问题一句话区别**:
+- **穿透**:查的数据**压根不存在** → 缓存永远写不进去 → 每次打 DB(黑客刷不存在的 id)
+- **击穿**:**热 key** 过期瞬间 → 海量请求同时打 DB(TTL=0 那一刹那)
+- **雪崩**:**大量 key 同时过期** → 多接口同时轰炸 DB(都设成 60s 同时到期)
+
+⭐ **穿透防护:缓存空对象**
+```ts
+const data = await prisma.task.findUnique({where: {id}})
+if (data) {
+  redis.set(key, JSON.stringify(data), 60)   // 真实数据 60s
+} else {
+  redis.set(key, "null", 30)                  // 空值标记,短 TTL 30s
+}
+// 命中时判断:if (cached === "null") return null
+```
+- **为什么空值 TTL 要短?** 空数据后来可能被创建,短 TTL 保证过段时间能重查 DB。
+
+⭐⭐⭐ **击穿防护:分布式锁单飞(Singleflight)**
+```
+缓存未命中
+   ├── 抢到锁(SET NX) → 查 DB → 写缓存 → 释放锁(try/finally)
+   └── 没抢到锁 → 轮询等缓存(50ms × 30次) → 超时抛 429
+```
+- 核心:**只有一个去查 DB,其他等缓存。**
+- 锁实现:`SET lockKey "1" NX EX 3`(NX 只在 key 不存在时设置 = 抢锁核心;EX 3 防死锁)
+- 释放锁:`DEL lockKey`,必须用 `try/finally` 保证报错也能释放
+
+🔥🔥🔥 **击穿锁的 if/else 互斥结构**(Day 9 第一版写漏):
+```ts
+// ❌ 错误:不管抢没抢到锁都走到查 DB
+const lock = await redis.setNx(...)
+if (!lock) { 轮询等 }
+const data = await prisma.findUnique(...)   // ← 没抢到锁的也走到这里!锁白加!
+
+// ✅ 正确:if/else 互斥,两条路
+if (lock) {
+  try { 查DB + 写缓存 } finally { 释放锁 }
+} else {
+  轮询等缓存 → 超时抛 429
+}
+```
+
+⭐ **雪崩防护:TTL 随机抖动**
+```ts
+private getRandomTtl(base: number, jitter: number): number {
+  return base + Math.floor(Math.random() * jitter)
+}
+// 用法:getRandomTtl(60, 30) → 60~90 秒随机
+```
+- 每个缓存过期时间不同,避免同一时刻集体失效。
+
+⭐ **穿透的进阶解法:布隆过滤器(Bloom Filter)**
+```
+请求 → 布隆过滤器(快速判断 id 可不可能存在)→ 可能存在才查缓存
+                ↓ 一定不存在
+              直接拒绝,Redis 和 DB 都不碰
+```
+- 终极防护 = **布隆过滤器 + 空值缓存 + 限流**。
+
+⭐ **企业级 vs 你写的**:
+| 问题 | 你写的(80分) | 企业级加强版 |
+|------|--------------|------------|
+| 穿透 | 缓存空对象 | + 布隆过滤器 |
+| 击穿 | SET NX 锁 | + Redlock 多节点锁 / 逻辑过期(宁可给旧数据不让用户等) |
+| 雪崩 | TTL 随机抖动 | + Redis 集群高可用 + 熔断降级 |
+
+### 关24 限流拦截器(滑动窗口)
+
+⭐⭐⭐ **固定窗口 vs 滑动窗口**:
+- **固定窗口**:第 0-60s 允许 100 次,第 60-120s 允许 100 次。**边界翻倍**:59s 打 100 次 + 61s 打 100 次 = 2 秒内 200 次 💥
+- **滑动窗口**:窗口 = [现在-60s, 现在],一直在动。精确剔除过期请求,**无边界翻倍风险**。
+
+⭐⭐⭐ **滑动窗口右边界 = 现在**(Day 9 算错过,重点钉死):
+```
+窗口 = [现在 - WINDOW, 现在]
+                ↑           ↑
+            windowStart     now
+
+例:现在=85秒, WINDOW=60秒
+  windowStart = 85 - 60 = 25秒
+  窗口 = [25秒, 85秒]   ← 不是 [0, 60]!
+  数 25~85秒内的请求数
+```
+
+⭐ **用 Sorted Set 实现滑动窗口三步走**:
+```
+key: rate_limit:{ip}    member: 时间戳字符串    score: 时间戳(毫秒)
+
+① 清旧:ZREMRANGEBYSCORE key 0 windowStart   ← 删窗口外的
+② 计数:ZCARD key                            ← 数窗口内的
+③ 判断:超限 → 429;没超 → ZADD 记录这次 + EXPIRE 设 key 过期
+```
+
+⭐ **为什么用 Sorted Set 不用计数器(INCR)?**
+- 计数器只记总数,不知道每个请求什么时候来的 → 无法精确剔除过期的 → 固定窗口,边界翻倍
+- Sorted Set 记住每个请求的时间戳 → 能删除窗口外的 → 真滑动
+
+⭐ **Guard 执行顺序**:`@UseGuards(A, B)` 按数组顺序执行。
+🔥 **限流必须前置**:挡在最外层,保护后面所有资源(验 token、Service、DB)。如果 JwtAuthGuard 在前,恶意请求每次都要走 token 解析 + 查 DB,限流就白挡了。
+
+⭐ **限流维度**:
+- 未登录 → 按 IP 限流(`rate_limit:{ip}`)
+- 登录后 → 按 userId 限流(`rate_limit:{userId}`),每人独立配额
+- ⚠️ 按 IP 限流的坑:**NAT 共享 IP**(公司 100 人共用一个公网 IP → 共享配额)
+
+### 关25 Sorted Set 排行榜(进行中 ⏳)
+
+⭐ **排行榜是 Sorted Set 的主场**:
+- `ZINCRBY key increment member` —— 给 member 加分(完成任务 +1)
+- `ZREVRANGE key 0 9 WITHSCORES` —— 按分数从高到低取 Top 10
+
+🔥 **ioredis 返回类型都是 string**(Day 9 踩坑):
+- `zincrby` 返回 `string`(`"50"` 不是 `50`),用时 `Number()` 转换
+- `zrevrange WITHSCORES` 返回**扁平数组** `["1","50","2","30"]`,**不是** `[["1","50"],["2","30"]]`
+- 遍历要两两配对:`for (let i = 0; i < arr.length; i += 2) { userId: arr[i], score: arr[i+1] }`
+
+⭐ **路由顺序坑**:`@Get("ranking")` 必须写在 `@Get(":id")` **前面**,否则 `ranking` 被当 id 参数。
+
+🔥🔥🔥 **Redis 字符串 + JS `+` 陷阱**(Day 10 追问踩的坑):
+- Redis 返回值都是字符串,`score = "2"`
+- `"2" + 1` → **`"21"`**(字符串拼接!不是加法!)
+- `"2" - 1` → `1`(减法会转 number,但 `+` 不会)
+- **JS `+` 规则:只要一边是字符串,就做拼接不做加法**
+- 解法:后端 `Number(score)` 转换后再返回,或前端 `Number(score) + 1`
+- 记死:**Redis 返回都是字符串,算术前必 `Number()` 转换**

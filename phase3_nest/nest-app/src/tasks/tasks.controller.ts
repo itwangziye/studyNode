@@ -5,6 +5,8 @@ import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
+import { ThrottleGuard } from "../common/guards/throttle.guard";
+
 
 @ApiTags("任务")
 @ApiBearerAuth()
@@ -13,9 +15,15 @@ export class TaskController {
     constructor(private readonly tasksService: TasksService) {}
 
     @Get()
+    @UseGuards(ThrottleGuard)
     @ApiOperation({summary: "获取所有任务"})
     async findAll() {
         return await this.tasksService.findAll()
+    }
+
+    @Get("/ranking")
+    async getRank() {
+        return await this.tasksService.getRanking()
     }
 
     @Get(":id")
@@ -50,7 +58,10 @@ export class TaskController {
         }
         return false
     }
-
-
+    @Post("/:id/complete")
+    @UseGuards(JwtAuthGuard)
+    async completeTask(@Param("id", ParseIntPipe) id: number, @CurrentUser() user) {
+        return await this.tasksService.completeTask(id, user.userId)
+    }
 } 
 
