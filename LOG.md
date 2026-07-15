@@ -500,6 +500,74 @@ JwtAuthGuard extends AuthGuard("jwt") {
 
 ---
 
+## 2026-07-15 (Day 11) — RabbitMQ 实战 + Kafka 启动:关 26-27 完成 ✅
+
+### 今日过关:2 关(阶段 5 消息队列)
+
+| 关 | 主题 | 用时感 | 掌握度 |
+|---|---|---|---|
+| 26 | 消息队列概念 + RabbitMQ 集成 | 中 | MQ 三大作用、RabbitMQ vs Kafka 选型理解到位 |
+| 27 | RabbitMQ Fanout Exchange 实战 | 慢 | 三消费者广播跑通,生命周期钩子踩坑深 |
+
+### 📚 今天学到的核心知识
+
+1. **消息队列三大作用**:① 异步解耦(耗时操作丢队列,立即响应)② 削峰填谷(突发流量排队)③ 服务解耦(生产者不管消费者是谁)
+2. **RabbitMQ vs Kafka 选型**:业务消息(订单/邮件)选 RabbitMQ(灵活路由),数据流(日志/行为追踪)选 Kafka(高吞吐+可回放)
+3. **RabbitMQ 模型**:Producer → Exchange(路由)→ Queue → Consumer。生产者不直连队列,Exchange 决定往哪路由。
+4. **Exchange 四种类型**:
+   - Fanout:广播,所有绑定的队列都收
+   - Direct:精确匹配 routing key
+   - Topic:模式匹配(`*` 一个词,`#` 多个词)
+   - Headers:按消息头(很少用)
+5. **ack(消息确认)**:消费者处理完必须 `channel.ack(msg)`,否则消息卡在 Unacked 状态。不 ack 的消息在消费者断开后才重新投递。
+6. **消费异常处理**:消费逻辑必须 try-catch,否则坏消息让消费者卡死。生产用 try-catch + ack(丢弃坏消息记日志)或死信队列(DLX)重试。
+7. **Kafka 核心概念**:
+   - Topic:主题(对标 RabbitMQ 队列,但消息不删)
+   - Partition:分区,并行处理
+   - Consumer Group:消费者组,同组分摊,不同组各自消费
+   - offset:偏移量,消费者记住「读到哪了」,可重放
+8. **Kafka vs RabbitMQ 本质区别**:RabbitMQ 消费即删(新消费者收不到历史);Kafka 消息留存(新消费者可 `fromBeginning: true` 从头消费/回放)
+9. **NestJS 完整生命周期**(踩坑后补讲):
+   - 启动:`onModuleInit`(子模块先)→ `onApplicationBootstrap`(全局就绪)→ `app.listen`
+   - 关闭:`onModuleDestroy` → `beforeApplicationShutdown` → `onApplicationShutdown`
+   - **铁律:依赖别人(连接/消费者)用 `onApplicationBootstrap`,释放资源用 `onModuleDestroy`**
+
+### 🔥 今天踩过并记住的坑
+
+1. **消费者 onModuleInit 拿到 undefined channel**(关26):子模块的 `onModuleInit` 先于根模块执行 → `connect()` 还没跑 → channel 是空的。改用 `OnApplicationBootstrap` 解决(所有模块初始化后才跑)。
+2. **队列名不一致**(关26):生产者写 `task:created`(冒号),消费者写 `task.created`(点号)→ 消息发出去没人收。RabbitMQ 用**点号**命名(跟 Redis 冒号相反)。
+3. **新消费者没注册到 Module**(关27):`SmsConsumer`/`StatsConsumer` 写了但没加到 `providers`,NestJS 不实例化 → `onApplicationBootstrap` 不执行。改 providers 数组解决。
+4. **改代码后没重启**(关27):watch 模式对新增文件有时不自动刷新,手动 Ctrl+C 重启才识别新消费者。排查依据:RabbitMQ 管理界面看队列数/消费者数。
+5. **amqplib 2.x API 变更**(关26):`connect()` 返回 `ChannelModel` 不是 `Connection`,大版本升级 API 变了,TS 报错。查 `index.d.ts` 真实类型修正。
+6. **RedisModule import 路径错**(关26):`import { RedisModule } from './redis/redis.service'` 应该从 `.module` 导入。
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **ack 删掉会怎样**(关26 Q1):不只是重启才重投,更直接的是消息卡在 Unacked 状态不释放
+- [ ] **消费异常必须 try-catch**(关26 Q2):不 try-catch 的话 ack 不执行,消息卡死
+- [ ] **NestJS 生命周期顺序**(关26 踩坑):子模块 onModuleInit 先于根模块,消费者用 onApplicationBootstrap
+- [ ] **Kafka offset 回放机制**(关28 刚学):fromBeginning 的含义
+
+### 📈 能力跃迁
+
+| 维度 | Day 10 | Day 11 |
+|---|---|---|
+| 消息队列 | 无 | ✅ RabbitMQ 生产者/消费者 + Fanout 广播 |
+| 系统架构 | 同步调用 | ✅ 异步解耦(创建任务 → 多服务广播通知) |
+| NestJS 生命周期 | 只用 onModuleDestroy | ✅ 掌握完整 5 个钩子 + 执行顺序 |
+
+### 🎯 明天计划
+
+- 开工先复习四个盲区(ack 行为、try-catch、生命周期、offset)
+- **写完关 28:Kafka 集成**(KafkaService 已搭好,生产者/消费者待写)
+- 关 28 写完 = 阶段 5 消息队列全部通关
+
+### 💬 一句话总结
+
+> 今天从「同步世界」跨进「异步世界」。最值钱的认知是:消息队列不是"更快",而是"解耦"——用户不等邮件、TaskService 不管邮件服务死活。踩的生命周期坑(onModuleInit 拿到 undefined channel)是 NestJS 最经典的异步初始化问题,记住"依赖别人用 onApplicationBootstrap"就够了。Fanout 三消费者广播跑通那一刻,你应该感受到 RabbitMQ 路由的威力——一条消息,三个服务各自消费。明天 Kafka 补齐,消息队列这块就完整了。
+
+---
+
 ## 2026-07-13 (Day 9) — Redis 缓存三连击:关 22-24 完成 ✅
 
 ### 今日过关:3 关(阶段 4 下半场,Redis 实战)

@@ -655,3 +655,176 @@ key: rate_limit:{ip}    member: 时间戳字符串    score: 时间戳(毫秒)
 - **JS `+` 规则:只要一边是字符串,就做拼接不做加法**
 - 解法:后端 `Number(score)` 转换后再返回,或前端 `Number(score) + 1`
 - 记死:**Redis 返回都是字符串,算术前必 `Number()` 转换**
+
+---
+
+## 阶段5:消息队列(关 26-28)
+
+### NestJS 完整生命周期(关 26 踩坑后补讲)
+
+⭐⭐⭐ **生命周期执行顺序**(关 26 踩坑核心):
+```
+启动:
+  ① onModuleInit(子模块先,父模块后)
+  ② onApplicationBootstrap(全局就绪)
+  ③ app.listen(开始接收请求)
+关闭:
+  ④ onModuleDestroy(模块清理)
+  ⑤ beforeApplicationShutdown(关闭前)
+  ⑥ onApplicationShutdown(彻底关闭)
+```
+
+🔥🔥🔥 **消费者/连接依赖用哪个钩子?**(Day 11 踩坑):
+```ts
+// ❌ 错误:消费者用 onModuleInit
+// 子模块的 onModuleInit 先于根模块执行
+// → connect() 还没跑 → getChannel() 拿到 undefined 💥
+export class TaskConsumer implements OnModuleInit {
+    onModuleInit() { this.rabbit.getChannel() }  // 💥 channel 是 undefined
+}
+
+// ✅ 正确:用 onApplicationBootstrap
+// 所有模块的 onModuleInit 都跑完(connect 已执行)→ 此时安全
+export class TaskConsumer implements OnApplicationBootstrap {
+    onApplicationBootstrap() { this.rabbit.getChannel() }  // ✅
+}
+```
+- **铁律:依赖别人(连接/消费者)→ 用 `onApplicationBootstrap`;释放资源 → 用 `onModuleDestroy`**
+
+⭐ **生命周期钩子用途速查**:
+| 钩子 | 阶段 | 典型用途 |
+|------|------|---------|
+| `onModuleInit` | 启动 | 轻量初始化(不依赖其他模块),如 connect() |
+| `onApplicationBootstrap` | 启动 | **依赖其他模块**(消费者/订阅/定时任务) |
+| `onModuleDestroy` | 关闭 | **释放资源**(disconnect/close) |
+| `beforeApplicationShutdown` | 关闭 | 记录关闭信号(SIGTERM/SIGINT) |
+| `onApplicationShutdown` | 关闭 | 最终清理 |
+
+### 关26 消息队列概念 + RabbitMQ 集成
+
+⭐⭐⭐ **消息队列三大作用**(面试必问):
+- **异步解耦**:耗时操作丢队列,立即响应用户(创建任务→立即返回,邮件后台发)
+- **削峰填谷**:突发流量先进队列,消费者按自己节奏处理(秒杀场景)
+- **服务解耦**:生产者不需要知道消费者是谁(任务服务不管邮件/短信/统计)
+
+⭐⭐⭐ **RabbitMQ vs Kafka 选型**:
+| 维度 | RabbitMQ | Kafka |
+|------|----------|-------|
+| 吞吐量 | 万级/秒 | **百万级/秒** |
+| 消息留存 | **消费即删** | 可保留 N 天,**可回放** |
+| 新消费者收历史? | ❌ 收不到 | ✅ `fromBeginning: true` |
+| 路由能力 | ⭐强大(Exchange) | 简单(按 Topic 分区) |
+| 适合场景 | 业务消息(订单/邮件) | 数据流(日志/行为追踪) |
+- **一句话:业务消息选 RabbitMQ,数据流选 Kafka**
+
+⭐ **RabbitMQ 消息模型**:
+```
+Producer → Exchange(交换机,做路由)→ Queue(队列)→ Consumer(消费者)
+```
+- 生产者**不直连队列**,丢给 Exchange,Exchange 根据规则路由到队列
+
+⭐⭐⭐ **ack(消息确认)**(Day 11 追问盲区):
+```ts
+channel.consume("queue", (msg) => {
+    // 处理消息...
+    channel.ack(msg)   // ← 告诉 RabbitMQ「处理完了,可以删了」
+})
+```
+- **不 ack 的后果**:消息变成 Unacked 状态,卡住不释放(不只是重启才重投)
+- 只有消费者断开连接(重启/挂掉),Unacked 消息才重新变 Ready 投递
+- **ack 本质:告诉 RabbitMQ 我处理完了,你可以删了**
+
+🔥🔥 **消费异常必须 try-catch**(Day 11 追问):
+```ts
+// ❌ 危险:JSON.parse 抛异常 → ack 不执行 → 消息卡死
+channel.consume("queue", (msg) => {
+    const data = JSON.parse(msg.content.toString())  // 💥 坏消息抛异常
+    channel.ack(msg)   // ← 根本执行不到!
+})
+
+// ✅ 正确:try-catch 包住,catch 里也 ack(丢弃坏消息)
+channel.consume("queue", (msg) => {
+    try {
+        const data = JSON.parse(msg.content.toString())
+    } catch (e) {
+        logger.error("坏消息", e)
+    }
+    channel.ack(msg)   // 不管成功失败都确认
+})
+```
+- 生产进阶:用**死信队列(DLX)**,失败的消息进死信队列人工处理
+
+🔥 **RabbitMQ 命名用点号**(Day 11 踩坑):
+- RabbitMQ key 用**点号**:`task.created`(不是 Redis 的冒号!)
+- 队列名/Exchange 名两边必须**完全一致**,否则消息发出去没人收
+
+🔥 **amqplib 2.x API 变更**:
+- `connect()` 返回 `ChannelModel`(不是老版本 `Connection`)
+- 查 `node_modules/amqplib/index.d.ts` 看真实类型
+
+### 关27 RabbitMQ Exchange 四种类型
+
+⭐⭐⭐ **Exchange 四种类型**(面试必背):
+| 类型 | 路由规则 | 典型场景 |
+|------|---------|---------|
+| **Fanout** | 广播,所有绑定的队列都收 | 通知多个服务(创建任务→邮件+短信+统计) |
+| **Direct** | 精确匹配 routing key | 不同消息进不同队列(key="email"→email队列) |
+| **Topic** | 模式匹配(`*`一个词,`#`多个词) | 按业务类型分发(task.*) |
+| **Headers** | 按消息头匹配 | 极少用 |
+
+⭐ **Fanout Exchange 完整流程**:
+```ts
+// 生产者:声明 Exchange + publish
+await channel.assertExchange("task.events", "fanout", {durable: true})
+channel.publish("task.events", "", buffer)   // routing key 为空(Fanout 不看 key)
+
+// 每个消费者:声明 Exchange + 声明 Queue + 绑定 + consume
+await channel.assertExchange("task.events", "fanout", {durable: true})
+const q = await channel.assertQueue("email_queue", {durable: true})
+await channel.bindQueue(q.queue, "task.events", "")   // 绑定到 Exchange
+await channel.consume(q.queue, (msg) => { ... ack ... })
+```
+
+🔥 **消费者必须注册到 Module**(Day 11 踩坑):
+- `SmsConsumer`/`StatsConsumer` 写了但没加到 `providers` → NestJS 不实例化 → `onApplicationBootstrap` 不执行
+- 排查依据:RabbitMQ 管理界面看队列消费者数 = 0
+
+🔥 **改代码后可能要手动重启**(Day 11 踩坑):
+- watch 模式对新增文件有时不自动刷新
+- 新增 provider 后最保险:Ctrl+C 手动重启
+
+### 关28 Kafka(进行中 ⏳)
+
+⭐ **Kafka 核心概念**:
+- **Topic**:主题(对标 RabbitMQ 队列,但消息不删,可留存)
+- **Partition**:分区,并行处理(一个 Topic 分多个 Partition)
+- **Consumer Group**:消费者组,同组内分摊消费,不同组各自独立消费
+- **offset**:偏移量,消费者记住「读到哪了」,可重放
+
+⭐⭐⭐ **Kafka vs RabbitMQ 本质区别**:
+| | RabbitMQ | Kafka |
+|---|---|---|
+| 消息留存 | 消费即删 | 保留 N 天 |
+| 新消费者收历史 | ❌ | ✅ `fromBeginning: true` |
+| 消息确认 | 手动 `ack(msg)` | 自动提交 offset |
+| 消费者标识 | 队列名 | `groupId`(消费者组) |
+
+⭐ **kafkajs 核心 API**:
+```ts
+// 生产者
+await producer.send({
+    topic: "task-events",       // 短横线命名(Kafka 惯例)
+    messages: [{ value: JSON.stringify(data) }]   // 字符串,不用 Buffer
+})
+
+// 消费者
+const consumer = kafka.consumer({ groupId: "stats-group" })
+await consumer.connect()
+await consumer.subscribe({ topic: "task-events", fromBeginning: true })
+await consumer.run({
+    eachMessage: async ({ message }) => {
+        const data = JSON.parse(message.value.toString())  // value 是 Buffer
+        // Kafka 不用 ack!自动提交 offset
+    }
+})
+```

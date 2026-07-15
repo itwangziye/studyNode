@@ -2,7 +2,7 @@
 
 > 目标:前端转全栈,对标武汉 Node 全栈岗位(NestJS + TypeScript,14-22K)
 > 训练方式:师徒制,每关实战 + 追问,做对才进下一关
-> 每天开工跟我说"复习",我会抽查昨天的知识点
+> 每天开工跟我说"复习",我会按 `SPACED_REVIEW.md` 的「📅 今日到期」清单出题(基于艾宾浩斯遗忘曲线的间隔重复系统,不再只复习昨天)
 
 ## 📊 进度看板
 
@@ -73,6 +73,14 @@
 | 24 | 限流拦截器(滑动窗口) | ✅ | ThrottleGuard、Sorted Set滑动窗口、ZREMRANGEBYSCORE清旧+ZCARD计数+ZADD记录、429拒绝 |
 | 25 | Sorted Set 排行榜 | ✅ | zIncrBy加分+zRevRange取TopN、completeTask+getRanking、路由顺序坑、Redis字符串+JS加法陷阱 |
 
+### 阶段5:消息队列 ⏳ 进行中 (2026-07-14)
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 26 | 消息队列概念 + RabbitMQ 集成 | ✅ | MQ三大作用、RabbitMQ vs Kafka选型、Producer/Consumer、ack确认、OnApplicationBootstrap生命周期坑 |
+| 27 | RabbitMQ Fanout Exchange 实战 | ✅ | Exchange四种类型、Fanout广播三消费者、assertExchange+bindQueue、消费者必须注册Module |
+| 28 | Kafka 集成实战 | ⏳ 进行中 | KafkaService已搭好(producer+connect),生产者/消费者待写 |
+
 ---
 
 ## 📁 目录结构
@@ -82,6 +90,7 @@ studyNode/
 ├── README.md            ← 你现在看的这个(进度看板)
 ├── LOG.md               ← 每日学习记录
 ├── REVIEW.md            ← 复习手册(知识点速查)
+├── SPACED_REVIEW.md     ← 间隔重复追踪表(每天复习看这里:今日到期/阶位滚动)
 ├── package.json
 ├── tsconfig.json
 └── phase1_core/         ← 阶段1 全部代码

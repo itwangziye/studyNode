@@ -1,13 +1,15 @@
 import { Injectable, HttpException} from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service"
 import { RedisService } from "../redis/redis.service";
+import { RabbitmqService } from "../rabbitmq/rabbitmq.service";
 
 
 @Injectable()
 export class TasksService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly redis: RedisService
+        private readonly redis: RedisService,
+        private readonly rabbit: RabbitmqService
     ) {}
     private readonly CACHE_KEY = "task:all"
     private readonly CACHE_RANK_KEY ="task:ranking"
@@ -59,7 +61,12 @@ export class TasksService {
         }
     }
     async create(title: string, userId: number) {
-        return await this.prisma.task.create({data: {title, userId}})
+        const task = await this.prisma.task.create({data: {title, userId}})
+        const channel = this.rabbit.getChannel();
+        channel.assertExchange("task.events", "fanout", {durable: true})  // 声明 fanout 交换机
+        const taskBuffter = Buffer.from(JSON.stringify({taskId: task.id, title: task.title, userId}));
+        channel.publish("task.events", "", taskBuffter)
+        return task
     }
     async remove(id: number) {
         const {count} = await this.prisma.task.deleteMany({ where: { id } })
