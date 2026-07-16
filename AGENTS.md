@@ -130,6 +130,7 @@ AppModule
 
 ## 编码约定
 
+- **代码检索默认用 codegraph MCP**:本仓库凡是理解代码、查找符号、看调用关系/影响范围,默认优先走 codegraph 工具——`codegraph_explore`(主线,问题/多符号一次出源码+调用路径)/ `codegraph_search`(按名查定位)/ `codegraph_node`(读单文件或单符号)/ `codegraph_callers`(查谁调用了它)。Read/Grep/Glob 只作补充,不主动当首选。
 - 注释用中文,带「为什么」;代码是学习教材,不是生产代码——**保留教学性注释**
 - 异步调用**必加 await**(`bcrypt.compare`/`prisma.*`/`service.findOne()` 漏 await 是最高频 bug,会让 Promise 被当 truthy)
 - 抛业务错误用 NestJS 异常类:`NotFoundException`(404)/`BadRequestException`(400)/`ConflictException`(409,资源重复)/`UnauthorizedException`(401),不要 `res.status().json()`

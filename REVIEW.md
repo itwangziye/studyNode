@@ -793,7 +793,7 @@ await channel.consume(q.queue, (msg) => { ... ack ... })
 - watch 模式对新增文件有时不自动刷新
 - 新增 provider 后最保险:Ctrl+C 手动重启
 
-### 关28 Kafka(进行中 ⏳)
+### 关28 Kafka 集成实战(已完成 ✅)
 
 ⭐ **Kafka 核心概念**:
 - **Topic**:主题(对标 RabbitMQ 队列,但消息不删,可留存)
@@ -828,3 +828,28 @@ await consumer.run({
     }
 })
 ```
+
+⭐⭐⭐ **Consumer Group 同组 vs 不同组**:
+- **同 groupId**:分摊消费(负载均衡),每条消息只被组内一个消费者收到
+- **不同 groupId**:各自独立消费全部消息(类似 RabbitMQ Fanout)
+
+⭐ **Kafka offset 回放**:消费者停掉后,消息仍在 topic 里。重启后从上次 offset 继续;`fromBeginning: true` 则从头读。RabbitMQ 做不到(消费即删)。
+
+🔥🔥🔥 **单节点 Kafka 必须设 replication.factor=1**(Day 12 踩坑):
+- 报错:`KafkaJSGroupCoordinatorNotFound: Failed to find group coordinator`
+- 根因:单节点 Kafka 默认 `offsets.topic.replication.factor=3`,但只有 1 个 broker → 无法创建 `__consumer_offsets` topic → 消费者组协调器不可用
+- 修复:docker-compose 加 `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1`
+- ⚠️ `__consumer_offsets` 是 Kafka 存消费者 offset 的内部 topic,没它消费者组就无法工作
+
+🔥 **kafkajs Logger 不能注入**(Day 12 踩坑):
+```ts
+// ❌ 错误:Logger 不是 @Injectable,不能构造函数注入
+constructor(private readonly logger: Logger) {}
+
+// ✅ 正确:自己 new
+private readonly logger = new Logger(KafkaConsumer.name)
+```
+
+🔥 **拼写:kafaka → kafka**(Day 12 踩坑):
+- `private readonly kafaka: KafkaService` ← 多了个 a
+- 注入名和调用名必须一致,TS 自洽不报错但是规范问题

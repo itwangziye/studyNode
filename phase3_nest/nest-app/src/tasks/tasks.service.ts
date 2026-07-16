@@ -2,6 +2,8 @@ import { Injectable, HttpException} from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service"
 import { RedisService } from "../redis/redis.service";
 import { RabbitmqService } from "../rabbitmq/rabbitmq.service";
+import { KafkaService } from "../kafka/kafka.service";
+
 
 
 @Injectable()
@@ -9,7 +11,8 @@ export class TasksService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly redis: RedisService,
-        private readonly rabbit: RabbitmqService
+        private readonly rabbit: RabbitmqService,
+        private readonly kafka: KafkaService
     ) {}
     private readonly CACHE_KEY = "task:all"
     private readonly CACHE_RANK_KEY ="task:ranking"
@@ -66,6 +69,12 @@ export class TasksService {
         channel.assertExchange("task.events", "fanout", {durable: true})  // 声明 fanout 交换机
         const taskBuffter = Buffer.from(JSON.stringify({taskId: task.id, title: task.title, userId}));
         channel.publish("task.events", "", taskBuffter)
+
+        await this.kafka.getProducer().send({
+            topic: "task-events",
+            messages: [{value: JSON.stringify({taskId: task.id, title, userId})}]
+        })
+
         return task
     }
     async remove(id: number) {

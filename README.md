@@ -73,13 +73,13 @@
 | 24 | 限流拦截器(滑动窗口) | ✅ | ThrottleGuard、Sorted Set滑动窗口、ZREMRANGEBYSCORE清旧+ZCARD计数+ZADD记录、429拒绝 |
 | 25 | Sorted Set 排行榜 | ✅ | zIncrBy加分+zRevRange取TopN、completeTask+getRanking、路由顺序坑、Redis字符串+JS加法陷阱 |
 
-### 阶段5:消息队列 ⏳ 进行中 (2026-07-14)
+### 阶段5:消息队列 ✅ 已完成 (2026-07-14 ~ 07-16)
 
 | 关 | 主题 | 状态 | 关键收获 |
 |---|---|---|---|
 | 26 | 消息队列概念 + RabbitMQ 集成 | ✅ | MQ三大作用、RabbitMQ vs Kafka选型、Producer/Consumer、ack确认、OnApplicationBootstrap生命周期坑 |
 | 27 | RabbitMQ Fanout Exchange 实战 | ✅ | Exchange四种类型、Fanout广播三消费者、assertExchange+bindQueue、消费者必须注册Module |
-| 28 | Kafka 集成实战 | ⏳ 进行中 | KafkaService已搭好(producer+connect),生产者/消费者待写 |
+| 28 | Kafka 集成实战 | ✅ | Topic/Partition/ConsumerGroup/offset、fromBeginning消息回放、kafkajs API、单节点replication factor坑 |
 
 ---
 
