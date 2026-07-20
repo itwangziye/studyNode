@@ -14,6 +14,8 @@ model User {
   password  String
   role      String    @default("user")
   tasks     Task[]
+  articles  Article[]
+  comments  Comment[]
 }
 
 model Task {
@@ -25,4 +27,30 @@ model Task {
   user      User?     @relation(fields: [userId], references: [id])
 
   @@map("tasks")
+}
+
+
+model Article {
+  id        Int     @id @default(autoincrement())
+  title     String  @db.VarChar(200)
+  content   String  @db.Text
+  authorId    Int     
+  author      User?   @relation(fields: [authorId], references: [id])
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
+  comments  Comment[]  
+
+  @@map("articles")
+}
+
+model Comment {
+  id          Int         @id @default(autoincrement())
+  content     String      @db.VarChar(200)
+  articleId   Int         
+  article     Article?    @relation(fields: [articleId], references: [id])
+  userId      Int
+  user        User?       @relation(fields: [userId], references: [id])
+  createdAt   DateTime?   @default(now()) @map("created_at") @db.Timestamp(0)
+
+
+  @@map("comments")
 }

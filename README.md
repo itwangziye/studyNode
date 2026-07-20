@@ -81,9 +81,22 @@
 | 27 | RabbitMQ Fanout Exchange 实战 | ✅ | Exchange四种类型、Fanout广播三消费者、assertExchange+bindQueue、消费者必须注册Module |
 | 28 | Kafka 集成实战 | ✅ | Topic/Partition/ConsumerGroup/offset、fromBeginning消息回放、kafkajs API、单节点replication factor坑 |
 
----
+### 阶段6:真实项目实战 —— 博客内容平台 ⏳ 进行中 (2026-07-16)
 
-## 📁 目录结构
+> 把阶段 1-5 学的所有技术整合成一个简历级全栈产品:Vue 3 + NestJS + MySQL + Redis + RabbitMQ + Kafka
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 29 | 数据建模 Article + Comment | ✅ | Prisma 1:N 建模、双向关联铁律、author语义化命名、@db.Text、migrate |
+| 30 | 文章 CRUD API | ✅ | 分页skip+take、select过滤password、权限判断顺序(404→403)、DTO校验、@IsEmpty反向坑 |
+| 31 | 文章缓存 + 排行榜 | ✅ | Cache-Aside复用、缓存key含分页参数、delByPattern通配删除、排行榜zIncrBy、写操作删缓存策略 |
+| 32 | 评论功能 | ⏳ | |
+| 33 | RabbitMQ 通知 + Kafka 日志 | ⏳ | |
+| 34 | 限流防护 | ⏳ | |
+| 35 | Vue 3 前端 | ⏳ | |
+| 36 | 端到端联调 + 收尾 | ⏳ | |
+
+---
 
 ```
 studyNode/

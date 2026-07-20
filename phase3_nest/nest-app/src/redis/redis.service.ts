@@ -43,6 +43,16 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key)
   }
 
+  // 按模式删除多个 key(如 "article:list:*" 删所有列表缓存)
+  // Redis 的 del 不支持通配符,需要先 keys 再批量删
+  // ⚠️ 生产环境 keys 命令在大数据量时很慢,仅限缓存清理场景
+  async delByPattern(pattern: string): Promise<void> {
+    const keys = await this.client.keys(pattern)
+    if (keys.length > 0) {
+      await this.client.del(keys)
+    }
+  }
+
   // ============================================================
   // 分布式锁相关:用于缓存击穿防护(关 23)
   // ============================================================

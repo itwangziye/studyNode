@@ -500,6 +500,67 @@ JwtAuthGuard extends AuthGuard("jwt") {
 
 ---
 
+## 2026-07-16 (Day 12) — Kafka 收尾 + 项目实战开局:关 28-31 完成 ✅
+
+### 今日过关:4 关(跨阶段:阶段5收尾 + 阶段6开局)
+
+| 关 | 主题 | 用时感 | 掌握度 |
+|---|---|---|---|
+| 28 | Kafka 集成实战 | 中 | kafkajs API + 单节点 replication factor 坑 |
+| 29 | 数据建模 Article + Comment | 快 | 1:N 建模、双向关联、author 语义化命名 |
+| 30 | 文章 CRUD API | 慢 | 分页 skip+take、select 过滤 password、权限判断顺序 |
+| 31 | 文章缓存 + 排行榜 | 中 | Cache-Aside 复用、delByPattern、排行榜 zIncrBy |
+
+### 📚 今天学到的核心知识
+
+1. **Kafka producer/consumer**:producer.send(topic, messages)、consumer.connect + subscribe(fromBeginning) + run(eachMessage)。Kafka 不用 ack,自动提交 offset。
+2. **单节点 Kafka replication factor 坑**:默认 replicas=3,单节点无法创建 `__consumer_offsets` → 消费者组协调器不可用。必须设 `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1`。
+3. **Consumer Group 同组 vs 不同组**:同组分摊消费(每条只被一个消费者收),不同组各自消费全部。
+4. **Prisma 关联双向绑定**:两边必须同时声明,少一边直接编译报错(不是带不出数据)。
+5. **Prisma select 过滤敏感字段**:`include: { author: { select: { id: true, name: true } } }` 过滤掉 password。
+6. **深度分页性能**:OFFSET 越大越慢(MySQL 要扫描丢弃前面的行)。游标分页(`WHERE id > lastId`)恒定快。
+7. **权限判断顺序**:先存在性(404)→ 再权限(403)。文章不存在时不能抛 403。
+8. **缓存 key 包含分页参数**:`article:list:${page}:${pageSize}`,不同页缓存不同。
+9. **写操作删缓存策略**:create 只删列表缓存(新文章 detail 缓存不存在);update/remove 删 detail 缓存。
+10. **Redis del 不支持通配符**:`del("article:list:*")` 只删字面 key,要用 `delByPattern`(先 KEYS 再批量 del)。
+
+### 🔥 今天踩过并记住的坑
+
+1. **Kafka Group coordinator not available**(关28):单节点 replication.factor 默认 3,设成 1 解决。
+2. **kafkajs Logger 不能注入**(关28):Logger 不是 @Injectable,必须 `new Logger()`。
+3. **拼写 kafaka → kafka**(关28):注入名拼错,TS 自洽不报错但是规范问题。
+4. **DTO @IsEmpty 写反**(关30):应该是 @IsNotEmpty。IsEmpty = "必须为空",逻辑完全反了。
+5. **findOne 没过滤 password**(关30):include author 时没加 select,密码泄露。
+6. **拼写 cache 反复写错**(关31 第6次):cashe/casha,全项目最顽固的拼写问题。
+7. **Redis del 通配符**(关31):del 不支持 `*`,要用 keys + 批量 del。
+8. **remove 参数不匹配**(关30):Controller 传 3 个参数,Service 只收 1 个,运行报错。
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **Kafka 单节点 replication factor**(今天抽考答错,答成 groupId)
+- [ ] **深度分页游标方案**(OFFSET 为什么慢)
+- [ ] **缓存一致性:create 不删 detail 缓存的原因**
+
+### 📈 能力跃迁
+
+| 维度 | Day 11 | Day 12 |
+|---|---|---|
+| 消息队列 | RabbitMQ | ✅ + Kafka(阶段5全通) |
+| 项目实战 | 无 | ✅ 博客平台 Article 模块(CRUD+缓存+排行) |
+| 数据建模 | 只有 Task | ✅ Article + Comment 1:N 建模 |
+
+### 🎯 明天计划
+
+- 开工先复习三个盲区(Kafka replication factor、游标分页、缓存一致性)
+- 进 **关 32:评论功能**(Comment 模块,跟 Article 结构类似)
+- 后续:关 33 MQ 整合 → 关 34 限流 → 关 35 Vue 前端 → 关 36 联调收尾
+
+### 💬 一句话总结
+
+> 今天从「学技术」正式跨进「用技术搭产品」。阶段 5 消息队列用 Kafka 收尾全绿,阶段 6 博客平台一口气做了数据建模+CRUD+缓存+排行榜四关。最值钱的认知:学过的 Cache-Aside / 排行榜 / 穿透防护全部能复用到新模块上——这说明你不是在"背 API",而是真的掌握了模式。拼写问题(cache/cashe)反复出现 6 次还没根除,明天必须钉死。
+
+---
+
 ## 2026-07-15 (Day 11) — RabbitMQ 实战 + Kafka 启动:关 26-27 完成 ✅
 
 ### 今日过关:2 关(阶段 5 消息队列)
