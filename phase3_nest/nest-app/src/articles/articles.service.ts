@@ -2,12 +2,16 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { RedisService } from "../redis/redis.service";
 import { CreateArticleDto } from "./dto/create-article.dto";
 import { PrismaService } from "../prisma/prisma.service";
+import { RabbitmqService } from "../rabbitmq/rabbitmq.service";
+import { KafkaService } from "../kafka/kafka.service";
 
 @Injectable()
 export class ArticleService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly redis: RedisService
+        private readonly redis: RedisService,
+        private readonly rabbit: RabbitmqService,
+        private readonly kafka: KafkaService
     ) {}
 
     private getRandomTtl(base: number, jitter: number): number {
@@ -53,6 +57,10 @@ export class ArticleService {
         await this.redis.zIncrBy("article:ranking", 1, String(id))
         if (article) {
             await this.redis.set(cacheKey, JSON.stringify(article), this.getRandomTtl(60, 30))
+            await this.kafka.getProducer().send({
+                topic: "article-views",
+                messages: [{value: JSON.stringify({articleId: id, timestamp: Date.now()})}]
+            })
         } else {
             await this.redis.set(cacheKey, "null", 30)
         }
@@ -62,6 +70,12 @@ export class ArticleService {
     async create(dto: CreateArticleDto, userId: number) {
         const article = await this.prisma.article.create({data: {title: dto.title, content: dto.content, authorId: userId}})
         await this.redis.delByPattern("article:list:*")
+
+        const channel = this.rabbit.getChannel();
+        channel.assertExchange("article.events", "fanout", {durable: true});
+        const articleBuffer = Buffer.from(JSON.stringify({articleId: article.id, title: article.title, authorId: article.authorId}))
+        channel.publish("article.events", "", articleBuffer)
+
         return article
     }
 
