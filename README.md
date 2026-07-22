@@ -2,7 +2,7 @@
 
 > 目标:前端转全栈,对标武汉 Node 全栈岗位(NestJS + TypeScript,14-22K)
 > 训练方式:师徒制,每关实战 + 追问,做对才进下一关
-> 每天开工跟我说"复习",我会按 `SPACED_REVIEW.md` 的「📅 今日到期」清单出题(基于艾宾浩斯遗忘曲线的间隔重复系统,不再只复习昨天)
+> **当前状态:6 个阶段全部完成,36 关全绿,具备投递 14-22K 全栈岗位的能力**
 
 ## 📊 进度看板
 
@@ -81,7 +81,7 @@
 | 27 | RabbitMQ Fanout Exchange 实战 | ✅ | Exchange四种类型、Fanout广播三消费者、assertExchange+bindQueue、消费者必须注册Module |
 | 28 | Kafka 集成实战 | ✅ | Topic/Partition/ConsumerGroup/offset、fromBeginning消息回放、kafkajs API、单节点replication factor坑 |
 
-### 阶段6:真实项目实战 —— 博客内容平台 ⏳ 进行中 (2026-07-16)
+### 阶段6:真实项目实战 —— 博客内容平台 ✅ 已完成 (2026-07-16 ~ 07-22)
 
 > 把阶段 1-5 学的所有技术整合成一个简历级全栈产品:Vue 3 + NestJS + MySQL + Redis + RabbitMQ + Kafka
 
@@ -90,11 +90,22 @@
 | 29 | 数据建模 Article + Comment | ✅ | Prisma 1:N 建模、双向关联铁律、author语义化命名、@db.Text、migrate |
 | 30 | 文章 CRUD API | ✅ | 分页skip+take、select过滤password、权限判断顺序(404→403)、DTO校验、@IsEmpty反向坑 |
 | 31 | 文章缓存 + 排行榜 | ✅ | Cache-Aside复用、缓存key含分页参数、delByPattern通配删除、排行榜zIncrBy、写操作删缓存策略 |
-| 32 | 评论功能 | ⏳ | |
-| 33 | RabbitMQ 通知 + Kafka 日志 | ⏳ | |
-| 34 | 限流防护 | ⏳ | |
-| 35 | Vue 3 前端 | ⏳ | |
-| 36 | 端到端联调 + 收尾 | ⏳ | |
+| 32 | 评论功能 | ✅ | Comment模块、嵌套路由、跨模块关联查询、发评论验证文章存在、权限(404→403) |
+| 33 | RabbitMQ 通知 + Kafka 日志 | ✅ | 发文RabbitMQ Fanout广播通知、看文Kafka浏览日志、fromBeginning重放 |
+| 34 | 限流防护 | ✅ | ThrottleGuard复用、发文章/发评论限流防刷屏、按IP vs userId选型 |
+| 35 | Vue 3 前端 | ✅ | Vite+Vue Router+Axios封装、JWT拦截器、文章列表/详情/评论/写文章、路由守卫 |
+| 36 | 端到端联调 + 收尾 | ✅ | 前后端+MySQL+Redis+RabbitMQ+Kafka 六组件全链路联调通过 |
+
+### 阶段7:工程化进阶 —— 调试与测试 ⏳ 进行中 (2026-07-22)
+
+> 从"靠猜"到"看得见":断点调试 + 单元测试
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 37 | VSCode 断点调试 NestJS | ⏳ | |
+| 38 | 断点调试实战(排查真实 Bug) | ⏳ | |
+| 39 | Jest 基础 + 第一个单元测试 | ⏳ | |
+| 40 | Service 层测试(Mock 依赖) | ⏳ | |
 
 ---
 
