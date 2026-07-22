@@ -5,6 +5,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { CreateArticleDto } from "./dto/create-article.dto";
 import { ThrottleGuard } from "../common/guards/throttle.guard";
+import { BatchCreateArticleDto } from "./dto/batch-create-article.dto";
 
 @ApiTags("文章")
 @ApiBearerAuth()
@@ -23,6 +24,13 @@ export class ArticlesController {
     @Get("ranking")
     async getRanking(@Query("topN") topN?: string) {
         return await this.articleService.getRanking(topN? Number(topN): 10)
+    }
+
+    @Post("batch")
+    @UseGuards(JwtAuthGuard)
+    @ApiOperation({ summary: "批量创建文章" })
+    async batchCreate(@Body() dto: BatchCreateArticleDto, @CurrentUser() user) {
+        return await this.articleService.batchCreate(dto, user.userId)
     }
 
     @Get(':id')
