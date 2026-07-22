@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { CreateArticleDto } from "./dto/create-article.dto";
-import { RolesGuard } from "../common/guards/roles.guard";
+import { ThrottleGuard } from "../common/guards/throttle.guard";
 
 @ApiTags("文章")
 @ApiBearerAuth()
@@ -34,7 +34,7 @@ export class ArticlesController {
     }
 
     @Post()
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, ThrottleGuard)
     async create(@Body() dot: CreateArticleDto, @CurrentUser() user) {
         const article = await this.articleService.create(dot, user.userId)
         return article

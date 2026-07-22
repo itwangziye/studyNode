@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation} from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { CreateCommentDto } from "./dto/create-comment";
+import { ThrottleGuard } from "../common/guards/throttle.guard";
 
 @ApiTags("评论")
 @ApiBearerAuth()
@@ -19,7 +20,7 @@ export class CommentController {
 
     @Post("articles/:articleId/comments")
     @ApiOperation({summary: "创建评论"})
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, ThrottleGuard)
     async create(
         @Param("articleId", ParseIntPipe) articleId: number, 
         @Body() dto: CreateCommentDto, 
