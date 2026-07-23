@@ -310,7 +310,7 @@ export class TasksService {
 ⭐ **Guard 替代中间件**:返回 boolean(true 放行 / false 自动 401),不用手写 `next()`。
 ⭐ **Passport 工作流**:`JwtAuthGuard("jwt")` → 调 `JwtStrategy.validate(payload)` → 验 token → 成功挂 `req.user`。
 ⭐ **import 不带 `.ts`**(与裸 Node 相反!):NestJS 用 tsc 编译,import 带 `.ts` 会报错。
-🔥🔥🔥 **漏 await(第 11+ 次)**:`bcrypt.compare` / `service.findOne()` 未 await → Promise 被当 truthy → 鉴权形同虚设。异步方法**条件反射加 await**。
+🔥🔥🔥 **漏 await(第 12 次!关42 batchCreate)**:`bcrypt.compare` / `service.findOne()` / `tx.article.create()` 未 await → Promise 被当 truthy → 鉴权形同虚设 / 事务 COMMIT 时序不可控。异步方法**条件反射加 await**。
 ⭐ **`.env` 加载**:NestJS 入口只有 `main.ts`,必须 `import "dotenv/config"`。
 ⭐ **防枚举攻击**:login 统一返回"邮箱或密码错误",不区分"用户不存在"vs"密码错"。
 
@@ -853,3 +853,139 @@ private readonly logger = new Logger(KafkaConsumer.name)
 🔥 **拼写:kafaka → kafka**(Day 12 踩坑):
 - `private readonly kafaka: KafkaService` ← 多了个 a
 - 注入名和调用名必须一致,TS 自洽不报错但是规范问题
+
+---
+
+## 阶段7:工程化进阶 —— VSCode 断点调试(关 37-38)
+
+### 关37 VSCode 断点调试 NestJS
+
+⭐⭐⭐ **launch.json 必须写 nvm 全路径**(Day 14 踩坑):
+```json
+{
+  "name": "Debug NestJS",
+  "type": "node",
+  "request": "launch",
+  "runtimeExecutable": "/Users/用户名/.nvm/versions/node/v22.22.0/bin/npx",
+  "runtimeArgs": ["nest", "start", "--debug", "--watch"],
+  "cwd": "${workspaceFolder}/phase3_nest/nest-app",
+  "console": "integratedTerminal"
+}
+```
+- **原因**:VSCode 启动 Node 子进程时**不加载 `.zshrc`/`.bashrc`**,nvm 的 node 不在子进程 PATH → 报"找不到 Node.js 二进制文件 npx"
+- 解法:`which npx`(在终端里)拿到全路径,填进 `runtimeExecutable`
+
+⭐ **调试核心面板**:
+| 面板 | 看什么 | 类比前端 |
+|------|--------|---------|
+| **Variables** | 当前作用域所有变量值 | Chrome Sources 面板的 Scope |
+| **Call Stack** | 函数调用栈,点哪层跳哪层 | Chrome Call Stack |
+| **Debug Console** | 断点处执行表达式 | Chrome Console |
+
+⭐ **快捷键**:
+- `F5` 继续(到下个断点)
+- `F10` 单步跳过(不进函数内部)
+- `F11` 单步进入(进函数内部)
+- `Shift+F11` 单步跳出
+
+### 关38 断点调试实战(排查真实 Bug)
+
+⭐ **断点类型**:
+- **普通断点**:行号旁点一下
+- **条件断点**:右键 → 满足条件才停(如 `id === 2`),海量请求里只抓特定那条
+- **Logpoint**:不停顿,只打印日志(替代 console.log,不打断流程)
+
+🔥🔥🔥 **Debug Console 执行异步要加 await**(Day 14 踩坑):
+```js
+// ❌ 返回 Promise { <pending> }
+this.redis.get("article:1")
+
+// ✅ 拿到真实值
+await this.redis.get("article:1")
+```
+- Debug Console 的表达式是**立即求值**,async 不加 await 只返回 Promise 对象
+- 想看 DB/Redis 数据,必须 `await this.xxxService.xxx()`
+
+🔥 **Controller 里 `this.redis` 是 undefined**(Day 14 踩坑):
+- RedisService 注入到 Service,没注入到 Controller
+- 在 Controller 的断点处要查 Redis,走 `this.articleService.redis.get(...)`
+
+⭐ **调试实战发现的 Bug**:update() 只删 `article:${id}` 详情缓存,**没删 `article:list:*` 列表缓存** → 改完文章列表还是旧数据。
+
+---
+
+## 阶段8:数据库进阶 —— 事务(关 41-42)
+
+### 关41 Prisma 事务($transaction)
+
+⭐ **ACID 四特性**:
+| 字母 | 含义 | 通俗解释 |
+|------|------|---------|
+| **A** 原子性 | 全成功或全回滚 | "要么都做,要么都不做" |
+| **C** 一致性 | 数据约束不被破坏 | 转账前后总额不变 |
+| **I** 隔离性 | 并发事务互不干扰 | 你改数据时别人看到的是旧值 |
+| **D** 持久性 | 提交后永久保存 | 断电也不丢 |
+
+⭐⭐⭐ **Prisma $transaction 两种写法**:
+
+**① 简单数组模式**(不能做逻辑判断,批量独立操作):
+```ts
+const [user, log] = await prisma.$transaction([
+  prisma.user.create({ data: {...} }),
+  prisma.log.create({ data: {...} }),
+])
+```
+
+**② 交互式 async 模式**(能做 if/for 逻辑判断):
+```ts
+const result = await prisma.$transaction(async (tx) => {
+  const user = await tx.user.create({ data: {...} })
+  if (user.role === "admin") {
+    await tx.log.create({ data: { userId: user.id } })
+  }
+  return user
+})
+```
+- 区别:数组模式只能"都执行",async 模式能"根据条件决定执行什么"
+- ⚠️ **事务回调里必须用 `tx`**,不能用 `this.prisma`(用了就脱离事务)
+
+🔥🔥🔥 **事务边界:只放 DB 操作**(Day 14 核心理解):
+```ts
+// ✅ 正确:delByPattern 在事务外
+const result = await this.prisma.$transaction(async (tx) => {
+  // 只有 DB 操作
+  for (const article of dto.articles) {
+    await tx.article.create({ data: {...} })  // ← 必须 await!
+  }
+})
+await this.redis.delByPattern("article:list:*")  // ← 事务外
+
+// ❌ 错误:Redis 删缓存进事务
+await this.prisma.$transaction(async (tx) => {
+  await tx.article.create({...})
+  await this.redis.del(...)  // ← Redis 不是 DB,不该进事务!
+})
+```
+- **原因**:事务管的是数据库原子性,Redis 操作不在数据库事务里,放进去如果 DB 回滚了,缓存已经删了 → 数据不一致
+- **正确顺序**:事务成功提交 → 再删缓存
+
+🔥🔥🔥 **事务里 tx.* 也必须 await**(Day 14 关42 第12次踩坑):
+```ts
+// ❌ 错误:漏 await
+for (const article of dto.articles) {
+  const item = tx.article.create({ data: {...} })  // ← 返回 Promise,没 await
+  createdArticle.push(item)  // push 的是 Promise,不是文章
+}
+
+// ✅ 正确:必须 await
+for (const article of dto.articles) {
+  const item = await tx.article.create({ data: {...} })
+  createdArticle.push(item)
+}
+```
+- **不加 await 的后果**:
+  1. push 进数组的是 Promise,不是文章数据
+  2. 事务回调 return 了数组(不是 Promise)→ Prisma `await` 一个非 Promise → 直接 resolve → **执行 COMMIT**
+  3. 此时那些 `tx.article.create()` 的 Promise **可能还没执行完** → COMMIT 时序不可控 → 可能全进/进几个/一个没进
+  4. 返回给前端的是 `[Promise, Promise, Promise]`,JSON 序列化成 `[{}, {}, {}]`
+- **await 的真正作用:在 COMMIT 之前保证所有 DB 操作都执行完**

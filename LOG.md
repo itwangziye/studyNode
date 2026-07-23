@@ -744,3 +744,55 @@ JwtAuthGuard extends AuthGuard("jwt") {
 ### 💬 一句话总结
 
 > 今天单日破 6 关,NestJS 6 大组件全部学完——从异常处理到 RBAC 权限到 Swagger 文档到自定义装饰器,一个生产级后端该有的能力都具备了。最值钱的是踩了 6 个真实坑(漏注册/transform 副作用/return false/概念混淆/端口占用/SQL 转义),这些都是面试和实战才会遇到的。明天进 Redis 实战,把缓存/限流/排行榜补上,后端深度就到位了。
+
+---
+
+## 2026-07-23 (Day 14) — VSCode 断点调试 + 事务入门:关 37-38、41 完成 ✅ / 关 42 未完 🔶
+
+### 今日产出
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 37 | VSCode 断点调试 NestJS | ✅ | launch.json 要写 nvm 全路径(VSCode 不走 nvm 的 shell profile);Variables/Call Stack/Debug Console;F10 跳过/F11 进入 |
+| 38 | 断点调试实战 | ✅ | 条件断点/Logpoint;Debug Console 查 Redis;排查出 update() 没删 `article:list:*` 列表缓存的 bug;Controller 里 `this.redis` 是 undefined 要走 `this.articleService.redis` |
+| 39-40 | 单元测试 | ⏭️ 跳过 | 用户选择跳过,后续有需要再补 |
+| 41 | 事务概念 + Prisma `$transaction` | ✅ | ACID;简单数组 `$transaction([...])` vs 交互式 `$transaction(async (tx) => {...})`;事务里只放 DB 操作 |
+| 42 | 事务实战(批量创建文章) | 🔶 **未完** | DTO+Service+Controller 都写了,review 出**漏 await(第 12 次!)**,还没实测验证就下班 |
+
+### 🔥 今天踩过并记住的坑
+
+1. **launch.json `npx` 找不到**(关37):VSCode 启动子进程不加载 `.zshrc`,nvm 的 node 不在 PATH。改写全路径 `/Users/.../nvm/.../v22.22.0/bin/npx`。
+2. **Debug Console 返回 pending Promise**(关38):`this.redis.get()` 是 async,Debug Console 里要写 `await this.redis.get(...)` 才拿得到值。不加 await 拿到的是 `Promise { <pending> }`。
+3. **Controller 里 `this.redis` 是 undefined**(关38):RedisService 没注入到 Controller,要走 `this.articleService.redis`。
+4. **🔥 `batchCreate` 里 `tx.article.create()` 漏 await(第 12 次!)**(关42):不加 await,push 的是 Promise 不是文章;COMMIT 时序不可控,可能全进/进几个/一个没进;返回给前端序列化成 `[{}, {}]`。**这是最高频盲区,改成每天抽。**
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **🔥 漏 await 条件反射**(第 12 次踩,且今天答含糊)—— 改成每天抽,连对 3 次才回 3 天轮
+- [ ] **import 后缀两套规则**(答"Nest 内部处理了"含糊)—— 补考:tsc 编译后 .ts 后缀变什么路径
+- [ ] **$transaction 两种写法**(只说"能不能判断"没说代码形态)—— 补考:各写一行调用
+
+### 📈 能力跃迁
+
+| 维度 | Day 12 | Day 14 |
+|---|---|---|
+| 调试能力 | console.log 党 | ✅ VSCode 断点 + Variables + Debug Console |
+| 数据库 | 单条 CRUD | ✅ 事务(原子性/隔离性),知道简单 vs 交互式两种事务 |
+| 工程思维 | 能写代码 | ✅ 能用断点排查真实 bug(发现 update 漏删列表缓存) |
+
+### ⚠️ 未完成项
+
+- **关 42 batchCreate 的 await bug 没实测验证**。明天第一件事:
+  1. 测加 await 版 → 返回 3 篇完整文章对象
+  2. 测不加 await 版 → 返回 `[{}, {}, {}]`
+  3. 两个结果贴给我对比
+
+### 🎯 明天计划
+
+- 开工先**实测关 42 的 await bug**(补今天的债)
+- 关 42 通关后进 **关 43:N+1 查询问题 + 优化**
+- SPACED_REVIEW 一堆逾期项要补抽(关 2/16/17/18/19/23/6/9/11)
+
+### 💬 一句话总结
+
+> 今天最大的认知变化:从"出 bug 就 console.log 瞎猜"升级到"打断点看 Variables 面板和 Call Stack"——这是前后端思维的分水岭,前端习惯了浏览器 DevTools,后端的 DevTools 就是 VSCode debugger。但代价是**漏 await 第 12 次踩坑**,说明这个坑还没形成条件反射,明天必须实测到底。
