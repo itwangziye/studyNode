@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { RabbitmqService } from "../rabbitmq/rabbitmq.service";
 import { KafkaService } from "../kafka/kafka.service";
 import { BatchCreateArticleDto } from "./dto/batch-create-article.dto";
+import { Article } from "../generated/prisma/client";
 
 @Injectable()
 export class ArticleService {
@@ -82,7 +83,7 @@ export class ArticleService {
 
     async batchCreate(dto: BatchCreateArticleDto, userId: number) {
         const result = await this.prisma.$transaction( async (tx) => {
-            const createdArticle: any = [];
+            const createdArticle: Article[] = [];
             for (const article of dto.articles) {
                 const item = await tx.article.create({
                     data: {title: article.title, content: article.content, authorId: userId}
