@@ -16,8 +16,8 @@ export class CommentService {
 
     async findByArticleId(articleId: number) {
         const cacheKey = `comment:${articleId}`;
-        const casheData = await this.redis.get(cacheKey);
-        if (casheData) return JSON.parse(casheData)
+        const cacheData = await this.redis.get(cacheKey);
+        if (cacheData) return JSON.parse(cacheData)
         const comments = await this.prisma.comment.findMany({
             where: {articleId},
             include: {
