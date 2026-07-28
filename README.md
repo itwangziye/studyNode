@@ -110,7 +110,7 @@
 |---|---|---|---|
 | 41 | 数据库事务概念 + Prisma $transaction | ✅ | ACID;简单数组 vs 交互式 async 事务;事务里只放 DB 操作 |
 | 42 | 事务实战(批量创建文章) | ✅ | 交互式 $transaction 批量创建;实测验证漏 await→返回[{},{}]且 DB 0 条;any 吃掉类型保护(标 Article[] tsc 会拦) |
-| 43 | N+1 查询问题 + 优化 | ⏳ | |
+| 43 | N+1 查询问题 + 优化 | ✅ | N+1用include联表一次查完(嵌套include:文章带评论带评论人);select白名单脱敏password vs include关联加载;深分页OFFSET扫描丢弃→游标分页WHERE id>lastId;缓存救不了深分页首次查询 |
 
 ---
 ├── README.md            ← 你现在看的这个(进度看板)

@@ -55,7 +55,24 @@ export class ArticleService {
             await this.redis.zIncrBy("article:ranking", 1, String(id))
             return JSON.parse(cachedData)
         }
-        const article = await this.prisma.article.findUnique({where: {id}, include: {author: {select: {id: true, name: true}}}})
+        const article = await this.prisma.article.findUnique({
+            where: {id}, 
+            include: {
+                author: {
+                    select: {id: true, name: true}
+                },
+                comments: {
+                    select: {
+                        content: true
+                    },
+                    include: {
+                        user: {
+                            select: {id: true, name: true}
+                        }
+                    }
+                }
+            }
+        })
         await this.redis.zIncrBy("article:ranking", 1, String(id))
         if (article) {
             await this.redis.set(cacheKey, JSON.stringify(article), this.getRandomTtl(60, 30))
