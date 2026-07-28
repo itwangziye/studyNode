@@ -796,3 +796,64 @@ JwtAuthGuard extends AuthGuard("jwt") {
 ### 💬 一句话总结
 
 > 今天最大的认知变化:从"出 bug 就 console.log 瞎猜"升级到"打断点看 Variables 面板和 Call Stack"——这是前后端思维的分水岭,前端习惯了浏览器 DevTools,后端的 DevTools 就是 VSCode debugger。但代价是**漏 await 第 12 次踩坑**,说明这个坑还没形成条件反射,明天必须实测到底。
+
+---
+
+## 2026-07-28 (Day 15) — 事务实战通关 + N+1/深分页 + ES 概念:关 41-44 完成 ✅
+
+### 今日产出
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 41 | 事务概念(补考) | ✅ | 补考过关:$transaction([...]) 简单数组 vs $transaction(async(tx)=>{}) 交互式 |
+| 42 | 事务实战(批量创建文章) | ✅ | **🔥 实测验证漏 await(第12次)**:不加await返回[{},{}]且DB一条没进;加await返回3篇完整文章;any吃掉类型保护(标Article[] tsc会拦) |
+| 43 | N+1 + 深分页 | ✅ | N+1用include联表一次查完(嵌套include:文章带评论带评论人);select白名单脱敏password vs include关联加载;深分页OFFSET扫描丢弃→游标分页WHERE id>lastId |
+| 44 | ES 概念 | ✅ | LIKE %开头索引失效(B+树无法定位)、无相关度排序、中文分词差;倒排索引=词找文档;ES index=MySQL表 |
+| 45 | ES 集成 | ⏸️ 暂停 | 讲了双写 vs MQ异步同步架构,用户决定明天接着学 |
+
+### 🔥 今天最关键的一刻:关 42 实测验证
+
+这是**第12次**踩漏await的坑,但今天终于用真实数据把理论落地:
+
+| 版本 | 返回给前端 | 数据库实际 |
+|------|-----------|-----------|
+| ❌ 不加 await | `[{}, {}, {}]` | **一条没进** |
+| ✅ 加 await | 3 篇完整文章 | 3 条都进 |
+
+机制:
+1. `tx.article.create()` 漏await → push进数组的是Promise
+2. 回调return数组(不是Promise) → Prisma await非Promise立即resolve → 执行COMMIT
+3. 此时INSERT请求还在网络飞 → 事务结束 → INSERT被丢弃
+4. **await的真正作用:在COMMIT之前保证所有DB操作都执行完**
+
+### 🔥 今天踩过并记住的坑
+
+1. **漏await(第12次,但这次实测了)**(关42):见上表。这次应该真的记牢了——不是"返回不对"这么轻飘飘,是COMMIT时序不可控DB可能一条没进。
+2. **`any` 吃掉类型保护**(关42):`const createdArticle: any = []` 让tsc闭嘴,漏await的bug漏到运行时。标`Article[]`后,push Promise时tsc会报错拦下。**any是逃生舱不是默认选项**。
+3. **倒排索引方向说反**(关44):第一次答成"文档找词"(这是正排!),补考纠正:倒排=词找文档。
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **any 陷阱:tsc 拦 bug**(今天答含糊)—— 补考
+- [ ] **select vs include 区别**(今天答含糊)—— 补考:select白名单脱敏 vs include联表
+- [ ] **漏await truthy 陷阱**(今天没说透)—— Promise被当truthy,鉴权漏await形同虚设
+
+### 📈 能力跃迁
+
+| 维度 | Day 14 | Day 15 |
+|---|---|---|
+| 数据库 | 单条CRUD + 事务概念 | ✅ 事务实战 + N+1优化 + 深分页 + 搜索引擎概念 |
+| 实证思维 | 实测了Debug Console | ✅ 用实测验证了漏await理论(DB实际进0条) |
+| 类型安全 | 知道有tsc | ✅ 理解any的危险,标具体类型让tsc拦bug |
+
+### 🎯 明天计划
+
+- 开工先补考3题:① any→tsc拦bug ② select vs include ③ 漏await truthy陷阱
+- **关 45:ES 集成 NestJS**(决定动手做,不只学概念)
+  - ES 环境(Docker)
+  - 双写 vs MQ异步同步方案选型
+  - 文章搜索接口
+
+### 💬 一句话总结
+
+> 今天最大的认知变化:**"知道"和"实测验证过"是两个档次**。漏await踩了12次,前面11次都是"知道但不长记性",今天用真实DB数据(0条 vs 3条)验证后,这个坑终于从"知识"变成了"肌肉记忆"。同样,N+1的include联表、ES的倒排索引,都是"动手测过才真懂"。这就是为什么训练协议写"每段代码必须实测验证,不靠脑补"——脑补的知识面试一追问就垮。

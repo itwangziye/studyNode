@@ -34,25 +34,25 @@
 
 ---
 
-## 📅 今日到期（2026-07-24）— 明天开工就答这些（今天已抽考部分）
+## 📅 今日到期（2026-07-29）— 明天开工就答这些
 
 > 闭卷。我提问、你凭记忆答，不准翻 `REVIEW.md`。答对才升级，答错重置 + 标记。
 
 ### 🔴 今日必答（S 级高频池）
-- [ ] **漏 await 条件反射**（关14/🔥42）—— 看到 `bcrypt.compare()`/`prisma.*()`/`service.*()` 默认加 await，为什么？🔥 关42又踩一次（第12次），必须每天抽直到连对3次
-- [ ] **import 后缀两套规则**（关1/14）—— 裸 Node 带 `.ts`、NestJS 不带，各自原因？🔥 关7含糊，补考
-- [ ] **401/403/404 区别**（关19）—— 口诀？各自由哪个组件管？
-- [ ] **事务漏 await 致 COMMIT 时序不可控**（关41）—— tx.* 不加 await，COMMIT 前操作没执行完会怎样？
+- [ ] **漏 await 条件反射 + truthy 陷阱**（关14/42）—— Promise 为什么被当 truthy？鉴权漏 await 会怎样？
+- [ ] **select vs include 区别**（关43）—— 各自作用？为什么查 author 用 select？🔥 今天答含糊，补考
+- [ ] **any 陷阱：tsc 拦 bug**（关42）—— 标 Article[] 时漏 await，tsc 会怎样？any 为什么危险？🔥 今天答含糊，补考
+- [ ] **import 后缀两套规则**（关1/14）—— 裸 Node 带 `.ts`、NestJS 不带，各自原因？（tsc 不改 import 字符串）
 
 ### 🟡 今日必答（A 级核心理解）
-- [ ] **Prisma $transaction 两种写法**（关41）—— 简单数组 vs 交互式 async，各写一行调用 + 区别
-- [ ] **事务边界：只放 DB 操作**（关41/42）—— delByPattern 为什么放事务外？
+- [ ] **倒排索引方向**（关44）—— 词找文档还是文档找词？今天补考对了，再验证一次
+- [ ] **ES index 含义**（关44）—— 对应 MySQL 的什么？
+- [ ] **事务漏 await + COMMIT 时序**（关41/42）—— 回调 return 数组，Prisma await 非Promise 会怎样？
 
 ### 🟢 今日可选（B 级用法记忆，有余力再答）
-- [ ] **createReadStream/pipeline API 名**（关3）—— 大文件流式读写该用哪两个 API？
-- [ ] **Sorted Set 命令三连**（关25）—— 加分/取 TopN/滑动窗口各用什么命令？返回类型？
-- [ ] **onModuleDestroy**（关13）—— PrismaService 为什么必须写它？
-- [ ] **滑动窗口 ZSET 三步**（关24）—— 清旧/计数/记录对应哪三条命令？
+- [ ] **N+1 怎么解决**（关43）—— include 联表，嵌套 include
+- [ ] **深分页游标分页**（关43）—— WHERE id > lastId，为什么比 OFFSET 快
+- [ ] **$transaction 两种写法**（关41）—— 数组 vs async(tx)
 
 ---
 
@@ -136,6 +136,21 @@
 
 > ⚠️ **严重警告**：漏 await 已第 12 次踩坑，今天又踩一次且答含糊。改为**每天抽**，连对 3 次才回 3 天轮。
 > 📌 **未完成项**：关 42 batchCreate 的 await bug **没实测验证**就下班了，明天第一件事补测。
+
+### 2026-07-28（Day 15 下班抽考）
+| 知识点 | 判定 | 阶位变化 | 备注 |
+|---|---|---|---|
+| 关41/42 $transaction 两种写法 | ✅ | L0→L1 | 补考过关：$transaction([...]) vs $transaction(async(tx)=>{}) |
+| 关1/14 import 后缀（tsc机制） | ✅ | S 连击1 | 补考过关：tsc不改import字符串，带.ts编译后找不到.js |
+| 关19 401/403/404 | ✅ | S 连击2 | 答对 |
+| 关42 漏await+事务 | ⚠️ | L1→L0 | return的是**数组**不是promise，说混了。重置 |
+| 关42 any陷阱 | ❌ | L0→L0 | 只答"类型完整"，没答"tsc会拦bug"，明天补考 |
+| 关43 N+1+select/include | ❌ | L0→L0 | select vs include完全没答全，明天补考 |
+| 关44 倒排索引 | ✅ | L0→L1 | 第一次答反，补考对了：词找文档 |
+| 关44 ES index含义 | ✅ | L0→L1 | 对应MySQL表 |
+
+> 📌 **今天实测验证了关42漏await**：不加await返回[{},{}]且DB一条没进，理论终于落地。
+> ⚠️ **明天补考重点**：① any→tsc拦bug ② select vs include（今天刚学答含糊） ③ 漏await truthy陷阱
 
 ---
 

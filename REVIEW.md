@@ -989,3 +989,62 @@ for (const article of dto.articles) {
   3. 此时那些 `tx.article.create()` 的 Promise **可能还没执行完** → COMMIT 时序不可控 → 可能全进/进几个/一个没进
   4. 返回给前端的是 `[Promise, Promise, Promise]`,JSON 序列化成 `[{}, {}, {}]`
 - **await 的真正作用:在 COMMIT 之前保证所有 DB 操作都执行完**
+
+🔥🔥🔥 **`any` 是逃生舱,不是默认选项**(Day 15 关42):
+```ts
+// ❌ 危险:any 关闭类型保护,push Promise 也不报错
+const createdArticle: any = []
+createdArticle.push(tx.article.create({...}))  // ← tsc 不吭声,bug 漏到运行时
+
+// ✅ 正确:标具体类型,push Promise 时 tsc 会报错拦下
+const createdArticle: Article[] = []
+createdArticle.push(tx.article.create({...}))  // ← tsc 报错!Promise<Article> 不能赋值给 Article
+```
+- **`any` 不只是"不检查",它是"主动关闭安全门"** → 标 `Article[]`,这个漏 await bug 在编译阶段就被 tsc 拦下,根本不用等运行时
+- 铁律:业务代码里能用具体类型就用具体类型,`any` 是最后逃生舱
+
+### 关43 N+1 查询问题 + 深分页优化
+
+⭐⭐⭐ **N+1 问题**(面试高频):
+```
+查 10 篇文章 + 每篇作者名:
+  ❌ N+1:  1 次查文章 + N 次循环查作者 = 11 次 SQL(1000 篇 = 1001 次 💥)
+  ✅ JOIN: include 关联,1 次 SQL 搞定
+```
+- 解决:`include: { author: {...} }` 一次 JOIN 拿全
+- 嵌套 include(多层关联):`include: { comments: { include: { user: {...} } } }` —— 文章带评论,评论再带评论人
+
+⭐⭐⭐ **select vs include 的精确区别**(面试必问):
+| | select | include |
+|---|---|---|
+| 作用 | 字段级白名单 | 关联加载 |
+| 写了之后 | **只返回**标 true 的字段,其他全丢弃 | 返回所有标量字段 + **额外**带关联 |
+| 用途 | 字段精简 + **敏感字段脱敏**(password) | 联表/JOIN |
+| 类比 | "只要这几个,别的扔掉" | "全都要,顺便带关联" |
+
+```ts
+// select 脱敏 password(只取 id 和 name)
+author: { select: { id: true, name: true } }
+
+// include 会带出 User 所有字段,包括 password(危险!)
+author: { include: true }  // ← 密码泄露!
+```
+
+⭐ **深分页(deep paging)问题**:
+```
+LIMIT 10 OFFSET 9990  ← MySQL 内部:扫描 10000 行,丢弃前 9990 行,返回 10 行
+```
+- 第 1000 页 → 扫描 + 丢弃 9990 行 → 极慢
+- **缓存救不了**:深分页几乎没人查第二次,缓存命中率极低,第一次查询必然打 DB 且慢
+
+⭐⭐⭐ **游标分页(cursor)解决深分页**:
+```
+skip+take:  LIMIT 10 OFFSET 9990     ← 数过去扔掉(OFFSET)
+游标分页:   WHERE id > 9990 LIMIT 10 ← 直接定位,不扫描
+```
+| | skip+take | 游标分页 |
+|---|---|---|
+| 第 1000 页 | 扫描丢弃 9990 行 ❌ | WHERE 直接定位 ✅ |
+| 能跳页 | ✅(传 page=1000) | ❌(只能下一页) |
+| 适合 | 后台管理 | 信息流/无限滚动 |
+- 核心:**OFFSET 是"数过去扔掉",游标是"WHERE 直接定位"**
