@@ -34,25 +34,26 @@
 
 ---
 
-## 📅 今日到期（2026-07-29）— 明天开工就答这些
+## 📅 今日到期（2026-07-30）— 明天开工就答这些
 
 > 闭卷。我提问、你凭记忆答，不准翻 `REVIEW.md`。答对才升级，答错重置 + 标记。
 
 ### 🔴 今日必答（S 级高频池）
-- [ ] **漏 await 条件反射 + truthy 陷阱**（关14/42）—— Promise 为什么被当 truthy？鉴权漏 await 会怎样？
-- [ ] **select vs include 区别**（关43）—— 各自作用？为什么查 author 用 select？🔥 今天答含糊，补考
-- [ ] **any 陷阱：tsc 拦 bug**（关42）—— 标 Article[] 时漏 await，tsc 会怎样？any 为什么危险？🔥 今天答含糊，补考
-- [ ] **import 后缀两套规则**（关1/14）—— 裸 Node 带 `.ts`、NestJS 不带，各自原因？（tsc 不改 import 字符串）
+- [ ] **standard 分词器对 Node.js 的处理**（关45）—— 点号会不会拆开？为什么？🔥 今天亲手测了还答错，必补考
+- [ ] **ik_max_word vs ik_smart**（关45）—— 哪个切得细？哪个切得粗？索引/搜索各用哪个？为什么？🔥 方向答反了，必补考
+- [ ] **漏 await 条件反射 + truthy 陷阱**（关14/42）—— Promise 被当 truthy
+- [ ] **事务漏 await 完整链条**（关42）—— return数组→Prisma await非Promise立即resolve→COMMIT。今天答对了，再验证1次连击
 
 ### 🟡 今日必答（A 级核心理解）
-- [ ] **倒排索引方向**（关44）—— 词找文档还是文档找词？今天补考对了，再验证一次
-- [ ] **ES index 含义**（关44）—— 对应 MySQL 的什么？
-- [ ] **事务漏 await + COMMIT 时序**（关41/42）—— 回调 return 数组，Prisma await 非Promise 会怎样？
+- [ ] **ES 重建 index 会清空数据**（关45）—— DELETE+PUT重建表，数据全没，要重新POST写文档
+- [ ] **中文 standard 分词灾难**（关45）—— 单字切分，全是噪音
+- [ ] **select vs include**（关43）—— select脱敏 vs include联表
+- [ ] **倒排索引方向**（关44）—— 词找文档
 
-### 🟢 今日可选（B 级用法记忆，有余力再答）
-- [ ] **N+1 怎么解决**（关43）—— include 联表，嵌套 include
-- [ ] **深分页游标分页**（关43）—— WHERE id > lastId，为什么比 OFFSET 快
-- [ ] **$transaction 两种写法**（关41）—— 数组 vs async(tx)
+### 🟢 今日可选（B 级用法记忆）
+- [ ] **ES URL 中文编码坑**（关45）—— q=中文 要用 --data-urlencode，否则编码错
+- [ ] **ES REST API 对应**（关45）—— PUT建index=CREATE TABLE，POST写文档=INSERT
+- [ ] **双写 vs MQ异步同步**（关45）—— 发文章快/可用性高 vs ES有延迟
 
 ---
 
@@ -151,6 +152,30 @@
 
 > 📌 **今天实测验证了关42漏await**：不加await返回[{},{}]且DB一条没进，理论终于落地。
 > ⚠️ **明天补考重点**：① any→tsc拦bug ② select vs include（今天刚学答含糊） ③ 漏await truthy陷阱
+
+### 2026-07-29（Day 16 开工复习）
+| 知识点 | 判定 | 阶位变化 | 备注 |
+|---|---|---|---|
+| 关42 any 陷阱 | ✅ | L0→L1 | 答对：tsc会拦，any接收任意类型 |
+| 关43 select vs include | ✅ | L0→L1 | 补考过关：select选择属性脱敏，include联表带全部 |
+| 关14/42 漏await truthy陷阱 | ✅ | S 连击1 | 答得好：鉴权形同虚设 |
+| 关42 事务漏await | ⚠️→✅ | L0→L1 | 第一次又答成promise(❌)，补考纠正为**数组**。return数组→Prisma await非Promise立即resolve→COMMIT |
+| 关1/14 import 后缀 | ⚠️ | S 连击1 | 口误NextJS→NestJS；机制(tsc不改字符串)大致对 |
+| 关44 倒排索引 | ✅ | L1→L2 | 词找文档，连对2次 |
+
+> ⚠️ 关42事务漏await连续2天答成"promise"，今天补考才纠正为"数组"。明天重点验证：return的到底是什么类型？
+
+### 2026-07-29（Day 16 下班抽考）
+| 知识点 | 判定 | 阶位变化 | 备注 |
+|---|---|---|---|
+| 关45 standard分词Node.js | ❌ | L0→L0 | 🔥 亲手测了还答错！Node.js没被拆开(点号在字母间不切)。明天必补考 |
+| 关45 中文standard灾难 | ✅ | L0→L1 | 单字切分，全是噪音 |
+| 关45 ik_max_word vs ik_smart | ⚠️ | L0→L0 | 方向答反(max=最多词=最细，不是最小)。重置 |
+| 关45 ES重建index清数据 | ⚠️ | L0→L0 | 前半对(建表)，后半答非所问。明天补考 |
+| 关42 事务漏await(return数组) | ✅ | L1→L2 | 终于答对！return数组。连击1 |
+| 关43 select vs include | ✅ | L1→L2 | select脱敏 vs include联表 |
+
+> ⚠️ 关45 ES核心3题答含糊(Node.js没拆开、ik方向、重建清数据)。明天重点补考。
 
 ---
 

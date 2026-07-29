@@ -857,3 +857,58 @@ JwtAuthGuard extends AuthGuard("jwt") {
 ### 💬 一句话总结
 
 > 今天最大的认知变化:**"知道"和"实测验证过"是两个档次**。漏await踩了12次,前面11次都是"知道但不长记性",今天用真实DB数据(0条 vs 3条)验证后,这个坑终于从"知识"变成了"肌肉记忆"。同样,N+1的include联表、ES的倒排索引,都是"动手测过才真懂"。这就是为什么训练协议写"每段代码必须实测验证,不靠脑补"——脑补的知识面试一追问就垮。
+
+---
+
+## 2026-07-29 (Day 16) — ES 环境搭建 + 中文分词实战:关 45 进行中 🔶
+
+### 今日产出
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 41-44 | 事务+N+1+ES概念(补考) | ✅ | 开工复习过关:漏await(return数组)、select脱敏、truthy陷阱、倒排索引 |
+| 45 | ES 集成 NestJS | 🔶 进行中 | ES Docker环境搭好 + ik中文分词跑通 + 搜索验证通过;NestJS集成明天做 |
+
+### 🔥 今天亲手做出来的东西(全是实测)
+
+1. **ES Docker 环境搭建**:`docker-compose-es.yml`,关键配置 `discovery.type=single-node`(单节点)+ `xpack.security.enabled=false`(关认证学习用)+ `ES_JAVA_OPTS=-Xms512m -Xmx512m`(限制内存)
+2. **ES REST API 实操**:用 curl 建index(PUT=建表)、写文档(POST=INSERT)、搜索(_search)、分析分词(_analyze)
+3. **standard 分词器实测**:"Learn Node.js Express" → ["learn","node.js","express","and","nestjs"],**Node.js点号没拆开**(字母间点号不切)
+4. **中文分词灾难亲眼看到**:standard 对 "学习全栈开发教程" → 单字切分(学|习|全|栈|开|发|教|程),全是噪音
+5. **ik 分词器安装**:`docker exec ... --batch`(非交互环境跳过确认)+ `docker restart` 重启生效
+6. **ik_max_word 实测**:"学习全栈开发教程" → ["学习","全","栈","开发","教程"],按词切分(比单字强太多)
+7. **搜索验证通过**:DSL match 搜"全栈开发"命中,score 2.68,相关度排序正常
+
+### 🔥 今天踩过并记住的坑
+
+1. **ik 插件安装报"unable to read from standard input"**(关45):`docker exec` 默认不带交互终端,插件要确认 y/N 读不到。解法:`--batch` 参数自动回 yes。
+2. **中文 URL 编码坑**(关45):`curl "url?q=全栈开发"` 中文没编码 → ES 收到乱码 → 0命中。解法:`-G --data-urlencode "q=全栈开发"` 自动编码,或用 DSL JSON 查询(推荐,集成 NestJS 时用)。
+3. **🔥 重建 index 清空数据**(关45):`DELETE articles` + `PUT articles` 重建表结构,但忘了重新 POST 写文档 → count=0 搜不到。**重建 index = 删表建表,数据全没,要重新写。**
+4. **ES _count 显示 0 但 _search 能搜到**:刚写入的文档还没 refresh(默认1秒),count走统计搜不到,search走近实时segment能搜到。ES的refresh机制。
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **🔥 standard 对 Node.js 分词**(亲手测了还答错!)—— 点号没拆开,字母间不切。必补考
+- [ ] **🔥 ik_max_word vs ik_smart 方向**(答反了)—— max=最多词=最细切分,smart=智能少切。索引用max召回高,搜索用smart精确
+- [ ] **ES 重建 index 清数据**(答含糊)—— DELETE+PUT=删表建表,数据全没
+
+### 📈 能力跃迁
+
+| 维度 | Day 15 | Day 16 |
+|---|---|---|
+| ES 认知 | 只懂倒排索引概念 | ✅ 亲手用 curl 跑通建index/写文档/搜索/分词分析 |
+| 中文搜索 | 只知道要分词 | ✅ 实测standard单字灾难 + ik按词切分,理解为什么必须ik |
+| 排查能力 | 看报错就问 | ✅ 自己用 _analyze/_count/_mapping 一步步定位"搜不到"原因 |
+
+### 🎯 明天计划
+
+- 开工先补考3题:① standard对Node.js分词 ② ik_max_word vs ik_smart ③ 重建index清数据
+- **关 45 下半场:ES 集成 NestJS**
+  - 装 ES 客户端库(@elastic/elasticsearch)
+  - 我给 SearchService 骨架,你写:建index方法 + 搜索方法
+  - 搜索接口:`GET /articles/search?keyword=xxx`
+  - 数据同步方案:发文章时发消息到 RabbitMQ/Kafka → 消费者异步写 ES
+
+### 💬 一句话总结
+
+> 今天最大的认知变化:**"看了 ≠ 记住了"**。standard 分词器把 Node.js 怎么切,你亲手跑 `_analyze` 看到了结果——但下班抽考还是答错。这就是主动回忆的价值:你以为看一眼就记住了,其实没有。必须逼自己"想出来"(抽考),知识才真正进脑子。这就是为什么训练协议里下班总结要提问闭卷,而不是念笔记。
