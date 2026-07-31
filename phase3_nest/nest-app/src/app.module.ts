@@ -11,10 +11,11 @@ import { KafkaService } from './kafka/kafka.service';
 import { AuthModule } from './auth/auth.module';
 import { ArticlesModule } from './articles/articles.module';
 import { CommentModule } from './comment/comment.module';
+import { ElasticsearchModule } from './elasticsearch/elasticsearch.module';
 
 
 @Module({
-  imports: [PrismaModule, RedisModule, RabbitmqModule, KafkaModule, TasksModule, AuthModule, ArticlesModule, CommentModule],
+  imports: [PrismaModule, RedisModule, ElasticsearchModule, RabbitmqModule, KafkaModule, TasksModule, AuthModule, ArticlesModule, CommentModule],
   controllers: [AppController],
   providers: [AppService],
 })

@@ -6,12 +6,16 @@ import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { CreateArticleDto } from "./dto/create-article.dto";
 import { ThrottleGuard } from "../common/guards/throttle.guard";
 import { BatchCreateArticleDto } from "./dto/batch-create-article.dto";
+import { ArticleSearchService } from './article-search.service';
 
 @ApiTags("文章")
 @ApiBearerAuth()
 @Controller("articles")
 export class ArticlesController {
-    constructor(private readonly articleService: ArticleService) {}
+    constructor(
+        private readonly articleService: ArticleService,
+        private readonly articleSearchService: ArticleSearchService
+    ) {}
     
 
     @Get()
@@ -31,6 +35,12 @@ export class ArticlesController {
     @ApiOperation({ summary: "批量创建文章" })
     async batchCreate(@Body() dto: BatchCreateArticleDto, @CurrentUser() user) {
         return await this.articleService.batchCreate(dto, user.userId)
+    }
+
+    @Get("search")
+    @ApiOperation({ summary: "搜索"})
+    async search(@Query("keyword") keyword: string) {
+        return await this.articleSearchService.search(keyword)
     }
 
     @Get(':id')

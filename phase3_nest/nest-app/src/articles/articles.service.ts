@@ -92,7 +92,7 @@ export class ArticleService {
 
         const channel = this.rabbit.getChannel();
         channel.assertExchange("article.events", "fanout", {durable: true});
-        const articleBuffer = Buffer.from(JSON.stringify({articleId: article.id, title: article.title, authorId: article.authorId}))
+        const articleBuffer = Buffer.from(JSON.stringify({articleId: article.id, title: article.title, content: article.content, authorId: article.authorId}))
         channel.publish("article.events", "", articleBuffer)
 
         return article
