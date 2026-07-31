@@ -1048,3 +1048,157 @@ skip+take:  LIMIT 10 OFFSET 9990     ← 数过去扔掉(OFFSET)
 | 能跳页 | ✅(传 page=1000) | ❌(只能下一页) |
 | 适合 | 后台管理 | 信息流/无限滚动 |
 - 核心:**OFFSET 是"数过去扔掉",游标是"WHERE 直接定位"**
+
+---
+
+## 阶段9:搜索引擎 —— Elasticsearch(关 44-45)
+
+### 关44 ES 概念 + 为什么不用 LIKE
+
+⭐⭐⭐ **LIKE 模糊查询的三大致命问题**(面试必问):
+1. **慢,无法用索引**:`LIKE '%关键词%'` 开头是 `%` → B+ 树无法定位 → 全表扫描。(`LIKE '关键词%'` 前缀匹配能走索引)
+2. **没有相关度排序**:LIKE 只能"匹配/不匹配",不能说"哪条更相关"。ES 用 BM25 算法给每条结果打分排序。
+3. **中文分词差**:LIKE 把"全栈教程"当一个整体字符串,匹配不到"学习全栈,推荐这个教程"。
+
+⭐⭐⭐ **ES vs MySQL 概念对照**(必背):
+| MySQL | Elasticsearch | 说明 |
+|-------|---------------|------|
+| 表 table | **index** | 数据容器(注意:ES 的 index ≠ MySQL 的 index!) |
+| 行 row | **document** | 一条数据,JSON 格式 |
+| 列 column | **field** | document 里的 key |
+| SQL | **DSL**(JSON) | ES 用 JSON 描述查询 |
+
+⭐⭐⭐ **倒排索引(inverted index)** —— ES 快的根本原因:
+- **正排索引(MySQL)**:文档 → 词(逐行扫描内容)
+- **倒排索引(ES)**:**词 → 文档**(词作为入口,一查就到)
+- 记忆:**倒排 = 词找文档,不是文档找词**(容易说反!)
+- 类比书的目录:不是翻每页找关键词,而是查目录直接定位页码
+
+⭐⭐⭐ **standard 分词器对 Node.js 的处理**(Day 16 实测):
+- "Learn Node.js Express" → ["learn", "node.js", "express", "and", "nestjs"]
+- **"Node.js" 点号没拆开!** standard 按 Unicode 文本分割规则,**字母间的点号不切**(认为是网址/版本号/专有名词)
+
+⭐⭐⭐ **中文 standard 分词灾难**(Day 16 实测):
+- "学习全栈开发教程" → ["学","习","全","栈","开","发","教","程"](单字!)
+- 单字匹配 = 全是噪音(搜"全栈"命中"全部""栈桥")
+- **必须用 ik 分词器**:按词切分 ["学习","全","栈","开发","教程"]
+
+⭐ **ik 分词器两种模式**(Day 16 实测,方向容易答反):
+| 模式 | 行为 | 用途 |
+|------|------|------|
+| `ik_max_word` | **最细粒度**,尽可能多切词 | **索引时用**(倒排索引多切,召回率高) |
+| `ik_smart` | **智能切分**,尽可能少切 | **搜索时用**(少切,精确度高) |
+- 记忆:**max = 最多词 = 最细**(不是最小!);smart = 智能 = 少切
+
+### 关45 ES 集成 NestJS
+
+⭐ **ES REST API 对照**(Day 16 实操):
+| 操作 | HTTP | ES REST | 客户端 API | MySQL 类比 |
+|------|------|---------|-----------|-----------|
+| 建 index | PUT | `/articles` | `client.indices.create({index, mappings})` | CREATE TABLE |
+| 检查在不在 | HEAD | `/articles` | `client.indices.exists({index})` | SHOW TABLES |
+| 写文档 | POST | `/articles/_doc` | `client.index({index, id, document})` | INSERT |
+| 搜索 | GET/POST | `/articles/_search` | `client.search({index, query})` | SELECT |
+
+🔥🔥🔥 **重建 index 会清空数据**(Day 16 踩坑):
+- `DELETE articles` + `PUT articles` = 删表建表,**数据全没**
+- 必须重新 `POST` 写文档(就像 DROP TABLE + CREATE TABLE 后要重新 INSERT)
+
+⭐ **ElasticsearchService 全局封装**(对标 RedisService/PrismaService):
+- `@Global() + @Module` + `@Injectable`,单例共享
+- 封装 `client: Client`(`@elastic/elasticsearch`)
+- `onModuleDestroy` 关闭连接
+
+⭐⭐⭐ **ArticleSearchService 三个方法**(自己写的):
+```ts
+// ① 建 index(启动时调一次)
+async ensureIndex() {
+  const exists = await this.es.client.indices.exists({ index: "articles" })
+  if (exists) return
+  await this.es.client.indices.create({
+    index: "articles",
+    mappings: {
+      properties: {
+        title: { type: "text", analyzer: "ik_max_word", search_analyzer: "ik_smart" },
+        content: { type: "text", analyzer: "ik_max_word", search_analyzer: "ik_smart" },
+        authorId: { type: "integer" }
+      }
+    }
+  })
+}
+
+// ② 写文档到 ES(用 MySQL id 作 ES _id,方便同步)
+async indexArticle(article: SearchableArticle) {
+  await this.es.client.index({
+    index: "articles",
+    id: String(article.id),       // ← MySQL id 作 ES _id
+    document: { title, content, authorId }
+  })
+}
+
+// ③ 搜索(multi_match 同时搜多字段)
+async search(keyword: string) {
+  const result = await this.es.client.search({
+    index: "articles",
+    query: {
+      multi_match: { query: keyword, fields: ["title", "content"] }
+    }
+  })
+  return result.hits.hits.map(item => ({ ...item._source as any, score: item._score }))
+}
+```
+
+⭐ **type 字段类型**:
+| type | 含义 | 例子 |
+|------|------|------|
+| `text` | 可分词(过 analyzer) | title、content |
+| `keyword` | 精确匹配(不分词) | 标签、状态码 |
+| `integer` | 整数 | authorId |
+
+🔥🔥🔥 **ES 客户端版本不匹配**(Day 17 踩坑):
+- `@elastic/elasticsearch@9.x` 发 `compatible-with=9` 请求头
+- ES 8.13.4 服务端只认 7/8 → 报 `media_type_header_exception`
+- 9.x 客户端没有兼容配置项 → **降级到 `@elastic/elasticsearch@8` 匹配服务端**
+- **铁律:客户端和服务端主版本必须一致**
+
+⭐ **中文 URL 编码坑**(Day 16):
+```bash
+# ❌ curl "url?q=全栈" 中文没编码 → ES 收到乱码 → 0命中
+# ✅ curl -G "url" --data-urlencode "q=全栈"
+# ✅ 或用 DSL JSON 查询(NestJS 集成时用,库自动处理)
+```
+
+⭐⭐⭐ **MQ 异步同步 ES(RabbitMQ Fanout)**:
+```
+POST /articles → 写 MySQL → 发消息到 article.events exchange(只发一条!)
+                                    ↓ Fanout 广播
+                    ├── article.notify.queue → 通知消费者(发邮件/统计)
+                    └── article.search.queue → 搜索消费者(写ES)
+```
+- **核心:一条消息,多个消费者各自消费**(Fanout 自动广播)
+- 生产者不需要知道有几个消费者 → **服务解耦**(加新功能不改老代码)
+- 选 RabbitMQ 不选 Kafka:**数据同步是一次性动作,不需要消息回放**,ack 保证可靠
+
+⭐⭐⭐ **消费者职责单一**:
+- `articles.consumer.ts` → 通知(各自内聚)
+- `article-search-consumer.ts` → 搜索同步
+- 不要混在一个文件:改一个会动到另一个,职责耦合
+
+🔥🔥🔥 **消费者 indexArticle 必须 await**(Day 17 第13次踩):
+```ts
+// ❌ 漏 await → ack 早执行 → 消息丢失 → ES 没入库
+this.articleSearchService.indexArticle({...})
+channel.ack(message)
+
+// ✅ await 保证写ES完成后再ack
+await this.articleSearchService.indexArticle({...})
+channel.ack(message)
+```
+- **ack 的本意是"我处理完了"**,没等 await 就 ack = 撒谎
+- await 的作用:**保证处理完成后再ack,保证消息可靠性**
+
+⭐⭐⭐ **OnApplicationBootstrap vs OnModuleInit**(连续2天答错):
+- NestJS 生命周期:`onModuleInit`(子先父后) → `onApplicationBootstrap`(全部就绪)
+- 消费者用 `onApplicationBootstrap`:因为 RabbitMQ 连接在 `AppModule.onModuleInit` 里执行
+- 子模块的 `onModuleInit` 先跑 → 此时 `connect()` 还没执行 → `getChannel()` 拿到 undefined
+- **铁律:依赖别人(连接/消费者)→ 用 `onApplicationBootstrap`**

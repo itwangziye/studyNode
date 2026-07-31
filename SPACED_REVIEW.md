@@ -34,26 +34,26 @@
 
 ---
 
-## 📅 今日到期（2026-07-30）— 明天开工就答这些
+## 📅 今日到期（2026-07-31）— 明天开工就答这些
 
 > 闭卷。我提问、你凭记忆答，不准翻 `REVIEW.md`。答对才升级，答错重置 + 标记。
 
 ### 🔴 今日必答（S 级高频池）
-- [ ] **standard 分词器对 Node.js 的处理**（关45）—— 点号会不会拆开？为什么？🔥 今天亲手测了还答错，必补考
-- [ ] **ik_max_word vs ik_smart**（关45）—— 哪个切得细？哪个切得粗？索引/搜索各用哪个？为什么？🔥 方向答反了，必补考
-- [ ] **漏 await 条件反射 + truthy 陷阱**（关14/42）—— Promise 被当 truthy
-- [ ] **事务漏 await 完整链条**（关42）—— return数组→Prisma await非Promise立即resolve→COMMIT。今天答对了，再验证1次连击
+- [ ] **漏 await 条件反射 + truthy 陷阱**（关14/42）—— Promise 被当 truthy，鉴权漏 await 形同虚设
+- [ ] **MQ 消费者 await + ack 可靠性**（关45）—— indexArticle 不await 会ack早执行，消息丢失
+- [ ] **事务漏 await 完整链条**（关42）—— return数组→Prisma await非Promise立即resolve→COMMIT
+- [ ] **select vs include + password脱敏**（关43）—— select白名单 vs include联表
 
 ### 🟡 今日必答（A 级核心理解）
-- [ ] **ES 重建 index 会清空数据**（关45）—— DELETE+PUT重建表，数据全没，要重新POST写文档
-- [ ] **中文 standard 分词灾难**（关45）—— 单字切分，全是噪音
-- [ ] **select vs include**（关43）—— select脱敏 vs include联表
-- [ ] **倒排索引方向**（关44）—— 词找文档
+- [ ] **OnApplicationBootstrap vs OnModuleInit**（关45）—— 子模块onModuleInit先跑，父模块connect还没执行
+- [ ] **Fanout 广播**（关45）—— 一条消息多消费者收到，Exchange自动广播
+- [ ] **ik_max_word vs ik_smart**（关45）—— max细切索引召回高，smart少切搜索精准
+- [ ] **ES 客户端版本匹配**（关45）—— 客户端和服务端主版本必须一致，否则 media_type_header 报错
 
 ### 🟢 今日可选（B 级用法记忆）
-- [ ] **ES URL 中文编码坑**（关45）—— q=中文 要用 --data-urlencode，否则编码错
-- [ ] **ES REST API 对应**（关45）—— PUT建index=CREATE TABLE，POST写文档=INSERT
-- [ ] **双写 vs MQ异步同步**（关45）—— 发文章快/可用性高 vs ES有延迟
+- [ ] **职责单一：消费者独立文件**（关45）—— 通知消费者 vs 搜索同步消费者，各自内聚
+- [ ] **ES 重建 index 清数据**（关45）—— DELETE+PUT重建表，数据全没
+- [ ] **standard 对中文单字灾难**（关45）—— 必须用ik
 
 ---
 
@@ -72,7 +72,7 @@
 | 24 | 滑动窗口右边界 = 现在 | 07-13 | 07-13 | **07-24** | 0 | 高频·逾期 |
 | 17 | 异常让 Observable 断流 | 07-09 | 07-13 | **07-24** | 0 | 高频·逾期 |
 | 22 | cache vs cash 拼写 | 07-13 | 07-13 | **07-24** | 0 | 高频·逾期 |
-| 41 | 事务漏 await 致 COMMIT 时序不可控 | 07-22 | 07-23 | **07-24 🔴** | 0 | 新·高频 |
+| 41 | 事务漏 await 致 COMMIT 时序不可控 | 07-22 | 07-23 | **08-02 🔴** | 1 | 高频·连对1次 |
 
 ---
 
@@ -176,6 +176,22 @@
 | 关43 select vs include | ✅ | L1→L2 | select脱敏 vs include联表 |
 
 > ⚠️ 关45 ES核心3题答含糊(Node.js没拆开、ik方向、重建清数据)。明天重点补考。
+
+### 2026-07-30~31（Day 17 ES集成）
+| 知识点 | 判定 | 阶位变化 | 备注 |
+|---|---|---|---|
+| 关45 standard分词Node.js | ⚠️→✅ | L0→L1 | 补考过关：点号没拆开 |
+| 关45 ik_max_word vs ik_smart | ❌→✅ | L0→L1 | 方向答反→补考对：max细切索引召回高，smart少切搜索精准 |
+| 关45 ES重建index清数据 | ⚠️→✅ | L0→L1 | 答非所问→补考对：DELETE+PUT=删表建表，数据全没 |
+| 关45 ES版本不匹配 | ✅ | L0→L1 | 客户端9.x发compatible-with=9，服务端8.x只认7/8。降级客户端到8.x |
+| 关45 OnApplicationBootstrap | ❌→✅ | L0→L1 | 第一天说"ES没加载"→第二天纠正：RabbitMQ连接(AppModule.onModuleInit)还没执行 |
+| 关45 Fanout广播 | ✅ | L0→L1 | 一条消息多消费者，Exchange自动广播 |
+| 关45 indexArticle await+ack | ✅ | L0→L1 | 不await会ack早执行，消息丢失，ES没入库 |
+| 关45 职责单一 | ✅ | L0→L1 | 消费者各自内聚，互不耦合 |
+| 关42 事务漏await | ✅ | L2→L3 | 连对2次，return数组 |
+| 关43 select vs include | ✅ | L2→L3 | select脱敏 vs include联表 |
+
+> 🎉 Day 17 下班抽考7题全对(首次!)。Q2生命周期和Q6 ik分词昨天答错今天纠正。
 
 ---
 

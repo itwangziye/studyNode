@@ -912,3 +912,63 @@ JwtAuthGuard extends AuthGuard("jwt") {
 ### 💬 一句话总结
 
 > 今天最大的认知变化:**"看了 ≠ 记住了"**。standard 分词器把 Node.js 怎么切,你亲手跑 `_analyze` 看到了结果——但下班抽考还是答错。这就是主动回忆的价值:你以为看一眼就记住了,其实没有。必须逼自己"想出来"(抽考),知识才真正进脑子。这就是为什么训练协议里下班总结要提问闭卷,而不是念笔记。
+
+---
+
+## 2026-07-31 (Day 17) — ES 集成全链路打通:关 45 完成 ✅
+
+### 今日产出
+
+| 关 | 主题 | 状态 | 关键收获 |
+|---|---|---|---|
+| 44 | ES 概念(补考) | ✅ | 补考过关:standard对Node.js点号不拆、ik_max_word切细/ik_smart少切、重建index清数据 |
+| 45 | ES 集成 NestJS | ✅ | **全链路打通**:ES环境+ik分词+搜索接口+MQ异步同步,发文章→搜到,端到端验证通过 |
+
+### 🔥 今天完整做出来的东西(简历级)
+
+**博客集成 Elasticsearch 全文搜索**:
+1. **ES 基础设施**:`ElasticsearchService` 封装 `@elastic/elasticsearch` 客户端,`@Global` 模块全局共享
+2. **搜索服务**:`ArticleSearchService` 三个方法(自己写的):
+   - `ensureIndex`:建 articles index,配 ik_max_word 索引 + ik_smart 搜索
+   - `indexArticle`:写文档到 ES,用 MySQL id 作 ES _id
+   - `search`:multi_match 同时搜 title+content,返回扁平结构+score
+3. **搜索接口**:`GET /articles/search?keyword=xxx`,路由顺序放对(search 在 :id 前)
+4. **MQ 异步同步**(RabbitMQ Fanout):
+   - `create()` 发消息到 `article.events` exchange(复用已有的,只加了 content 字段)
+   - `ArticleSearchConsumer` 消费消息 → 调 `indexArticle` 写 ES
+   - **一条消息两个消费者**(通知消费者 + 搜索同步消费者),各自独立
+5. **端到端验证**:发文章(id=29)→ 2秒后搜"ES同步测试" → 命中,score 3.24 ✅
+
+### 🔥 今天踩过并记住的坑
+
+1. **ES 客户端版本不匹配**(关45):`@elastic/elasticsearch@9.x` 客户端发 `compatible-with=9` 请求头,但 ES 8.13.4 服务端只认 7/8 → 报 `media_type_header_exception`。9.x 客户端没有兼容配置项 → **降级到 8.x 匹配服务端**。教训:客户端和服务端主版本必须一致。
+2. **500 错误被脱敏**(关45):搜索接口报 500,但 AllExceptionsFilter 把真实错误脱敏成"服务器内部错误"。排查时用 `node -e` 直接调客户端拿到真实堆栈(关 37 学的断点调试思维)。**报错要查真实堆栈,不能只看脱敏文案。**
+3. **`indexArticle` 漏 await(第13次!)**(关45):消费者里 `indexArticle` 没 await 就 ack → 消息被标记"已处理"但 ES 可能没写成功 → **消息丢失+ES没入库**。await 的作用:保证写ES完成后再ack,保证消息可靠性。
+4. **watch 模式降级依赖不自动跟上**(关45):`pnpm remove` + `pnpm add` 降级依赖后,`start:dev` 的 watch 没重启 → 服务挂了。手动重启解决。**改依赖后最好手动重启服务。**
+5. **改依赖后多关注 ES 报错**(关45):ES 客户端 9.x 装的 `CompatibilityVersion` 配置项,tsc 报"不存在" → 说明这个版本 API 变了 → 去查真实可用配置,而不是硬试。
+
+### 🎯 追问盲区(明天复习重点)
+
+- [ ] **OnApplicationBootstrap vs OnModuleInit**(连续2天答错→今天纠正):RabbitMQ连接在AppModule.onModuleInit执行,子模块onModuleInit先跑→channel undefined
+- [ ] **ik_max_word vs ik_smart 方向**(昨天答反→今天对):max细切索引召回高,smart少切搜索精准
+
+### 📈 能力跃迁
+
+| 维度 | Day 16 | Day 17 |
+|---|---|---|
+| ES 集成 | 只会用curl操作ES | ✅ 完整集成到NestJS:Service+Controller+Module+MQ同步 |
+| MQ 应用 | 只会发帖通知 | ✅ 一条消息多消费者(通知+搜索同步),理解Fanout解耦 |
+| 端到端思维 | 单个接口测 | ✅ 发文章→MQ→ES→搜索 全链路打通 |
+| 抽考表现 | 多题答含糊 | ✅ **7题全对(首次!)**,连续答错的Q2/Q6纠正了 |
+
+### 🎯 明天计划
+
+- 开工复习:OnApplicationBootstrap机制 + ik分词方向 + 漏await+ack可靠性
+- **关 46:ES 进阶(高亮 + 相关度调优 + DSL)**
+  - 搜索结果高亮(命中关键词标红)
+  - DSL 查询语法(match/term/bool)
+  - 相关度调优(boost 加权)
+
+### 💬 一句话总结
+
+> 今天最大的认知变化:**"自己动手做出来的,才是真本事"**。关 45 的 ES 集成,从环境搭建到搜索接口到 MQ 异步同步,全是自己一步步写+测出来的,不是看教程。中间踩了版本坑、漏await坑(第13次),但都自己排查解决了。最关键的是——下班抽考 7 题全对(训练以来首次),说明"动手做+闭卷抽考"的训练闭环真的有效,知识从"看过"变成了"想得起来"。这就是武汉 14-22K 全栈岗位要的能力:不只是会用 API,而是能从零搭起来+排查问题+讲清原理。

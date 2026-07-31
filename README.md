@@ -117,7 +117,7 @@
 | 关 | 主题 | 状态 | 关键收获 |
 |---|---|---|---|
 | 44 | ES 概念 + 为什么不用 LIKE 模糊查询 | ✅ | LIKE %开头索引失效(B+树无法定位)、无相关度排序、中文分词差;倒排索引=词找文档(不是文档找词!);ES index=MySQL表;文档=行;分词器把长词拆成单元匹配 |
-| 45 | ES 集成 NestJS(文章搜索接口) | 🔶 进行中 | ES Docker环境搭建+ik中文分词器安装;REST API实操(PUT建表/POST写/_analyze分词);standard对中文单字灾难;ik按词切分;DSL match搜索+相关度score;重建index清数据坑;明天进NestJS集成 |
+| 45 | ES 集成 NestJS(文章搜索接口) | ✅ | ES Docker环境+ik分词器;ElasticsearchService全局封装;ArticleSearchService(ensureIndex/indexArticle/search自写);GET /articles/search搜索接口;RabbitMQ异步同步(create发消息+ArticleSearchConsumer写ES);9.x客户端版本不匹配坑(降级到8.x);端到端打通(发文章→搜到) |
 | 46 | ES 进阶(中文分词 + 高亮 + 相关度排序) | ⏳ | |
 
 ---
