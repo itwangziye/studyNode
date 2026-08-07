@@ -1202,3 +1202,200 @@ channel.ack(message)
 - 消费者用 `onApplicationBootstrap`:因为 RabbitMQ 连接在 `AppModule.onModuleInit` 里执行
 - 子模块的 `onModuleInit` 先跑 → 此时 `connect()` 还没执行 → `getChannel()` 拿到 undefined
 - **铁律:依赖别人(连接/消费者)→ 用 `onApplicationBootstrap`**
+
+### 关46 ES 进阶 —— highlight + bool 组合查询
+
+⭐⭐ **highlight 高亮**(实测,演示层功能):
+```json
+GET /articles/_search
+{
+  "query": { "multi_match": { "query": "全栈", "fields": ["title", "content"] } },
+  "highlight": {
+    "fields": { "title": {}, "content": {} }   // ← 和 query 平级的顶层字段
+  }
+}
+```
+- 返回里**额外**多一个 `highlight` 字段,和 `_source` 并列,命中词被 `<em>` 包好
+- `_source` 仍是干净原文,前端拿 `highlight` 渲染标红(`em{color:red}`)
+- 🔥 **实测证据**:搜"全栈"返回 `<em>全</em><em>栈</em>` —— **两个 `<em>` = 两个 token**
+  → 印证搜索侧 ik_smart 把"全栈"切成"全"+"栈"两个词(词典没收录"全栈")
+- content 长字段默认只返回前几个命中片段(`number_of_fragments`),不是整篇
+
+⭐⭐⭐⭐⭐ **bool 组合查询 —— 四子句**(ES 面试最高频考点!):
+```json
+"bool": {
+  "must":     [{ "match": { "title": "Nest" } }],     // 必须 + 算分
+  "should":   [{ "match": { "content": "Nest" } }],   // 有更好 + 加分(不强求)
+  "filter":   [{ "term": { "authorId": 2 } }],        // 必须 + 不算分 + 缓存
+  "must_not": [{ "term": { "status": "deleted" } }]   // 必须不 + 不算分
+}
+```
+
+| 子句 | SQL 类比 | 语义 | 算分 | 缓存 |
+|---|---|---|---|---|
+| `must` | AND | **必须满足** | ✅ | ❌ |
+| `should` | OR | **满足则加分,不满足不排除** | ✅(命中加分) | ❌ |
+| `filter` | WHERE | **必须满足** | ❌ | ✅(位图 bitmap) |
+| `must_not` | NOT | **必须不满足** | ❌ | ✅ |
+
+🔥🔥🔥 **must vs filter 的灵魂区别**(面试必问):
+- **筛选能力完全相同** —— 同样的条件,must 和 filter 筛出的文档**一模一样**
+- **差别只有两点**:must 算分(参与相关度排序)、filter 不算分(对所有命中文档加 0 分)
+- **性能优势两层**(都答全!):
+  1. 跳过算分计算(BM25/TF-IDF 是 CPU 密集)
+  2. 结果可缓存成位图(bitmap),下次直接命中
+- **铁律:不需要比相关度的精确条件(范围/相等/枚举),必须用 filter 不用 must**
+
+🔥 **should 的核心语义("有更好,不强求")**:
+- should 命中给加分,不命中不排除 → 用于"**优先项**"
+- ⚠️ **同一字段不能两头占**:title 已经在 must(必须命中),就不能再放 should(加分)
+  → should 立刻失效(因为命中的本来就在 must 结果里,加分无意义)
+- 正确用法:must 放硬条件(content 必须),should 放软优先(title 也有的加分)
+
+⭐⭐⭐ **term vs match(易踩)**:
+| 查询 | 是否分词 | 适用字段 | 例子 |
+|---|---|---|---|
+| `term` | ❌ 不分词,精确比对 | 数值/枚举/keyword | `{term: {authorId: 1}}`、`{term: {status: "published"}}` |
+| `match` | ✅ 分词后匹配 | text 文本 | `{match: {title: "全栈"}}` |
+
+🔥 **铁律**:文本字段用 match/multi_match,数值/枚举字段用 term。错配会搜不到或语义错。
+- **反例**(面试常考):`{term: {title: "全栈开发"}}` → 0 命中
+  - 原因:title 建索引时已被分词,存的是"全""栈""开发"… 根本没有"全栈开发"这个完整 token
+  - term 不分词,拿"全栈开发"整体去比对 → 找不到
+
+⭐ **multi_match vs match**:
+- `match`:**单字段**分词匹配 —— `{match: {title: "keyword"}}`
+- `multi_match`:**多字段**分词匹配 —— `{multi_match: {query, fields: ["title","content"]}}`
+- 单字段别用 multi_match(浪费语义)
+
+🔥 **JSON 格式高频错误**(已第 3 次踩,记为盲区):
+1. **单引号不是合法 JSON**:`{status: 'draft'}` ❌ → `{"status": "draft"}` ✅
+   - JS 对象用单引号/无引号,DSL 是 **JSON 只认双引号**
+2. **数值字段不能带引号**:`{authorId: "3"}` ❌ → `{authorId: 3}` ✅
+   - authorId 是 integer,字符串"3"语义错,term 比对可能失败
+3. **字段名要对**:文章表作者字段是 `authorId`,不是 `id`/`_id`(_id 是 ES 文档主键)
+
+⭐⭐ **实战 query 设计思路**(需求→子句映射):
+| 需求关键词 | 选哪个子句 |
+|---|---|
+| "必须包含X" | `must`(算分) |
+| "只保留X=某值" / "必须是某作者" | `filter`(精确硬条件,不算分) |
+| "排除X" / "不能是Y" | `must_not` |
+| "优先那些含X的" / "有X的排前面" | `should`(加分项) |
+
+---
+
+## 阶段A:并发与数据一致性(关 47-52)
+
+### 关47 并发基础 —— 进程/线程/事件循环(🔥 漏 await 13 次的根因课)
+
+⭐⭐⭐ **进程 vs 线程**:
+| 概念 | 比喻 | 特点 |
+|---|---|---|
+| 进程(process) | 工厂车间 | 独立内存空间,开销大 |
+| 线程(thread) | 车间里的工人 | 共享进程资源,开销小 |
+
+- 传统后端(Java/PHP):**多线程**模型,一个请求派一个线程
+- Node:**单线程**模型,整个进程只有 1 个主线程应付所有请求
+
+⭐⭐⭐⭐⭐ **Node 单线程怎么并发?(核心)** —— 靠"异步 + 事件循环"两个机制:
+
+**机制 A:遇到耗时操作,主线程不傻等,交出去**
+```
+主线程 → "libuv,帮我查 MySQL 用户数据"(派活,不亲自干)
+       → 立刻解放,处理下一个请求
+       → libuv 线程池(默认4线程)负责真正执行 I/O
+```
+
+**机制 B:事件循环负责"收尾"**
+```
+libuv/MySQL 查完 → 结果进事件循环的"待办队列"
+事件循环不停转 → 主线程一有空 → 取出已完成的事件 → 执行对应回调(收尾)
+```
+
+🔥🔥🔥 **await 在时序链里的角色(根治盲区)**:
+```
+const user = await db.findUser(id)
+                  ↑
+1. db.findUser(id) 发起查询 → 返回 pending Promise(还没好)
+2. await 挂起当前函数,把控制权还给事件循环(主线程去处理别的请求!)
+3. MySQL 查完 → 结果进事件循环队列 → 唤醒 await → user 拿到真值
+```
+**await 做两件事:① 等结果(等事件循环收尾) ② 让出主线程(等待期间处理别的请求)**
+
+🔥🔥🔥 **漏 await 破坏的就是"等收尾"这一步**:
+```
+const user = db.findUser(id)   // ← 没 await
+// user = pending Promise 对象(查询刚发起,还没完成)
+if (!user) throw Unauthorized  // Promise 是对象 → 永远 truthy → 永远不进 if
+```
+- **根因:发起查询后跳过了"等事件循环收尾",拿了个没完成的 Promise 空壳当结果用**
+- Promise 不管 pending/fulfilled/rejected,本身永远是对象 → truthy → 鉴权形同虚设
+
+⭐⭐ **串行 vs 并发(实测对比)**:
+```ts
+// 串行:总耗时 = 各任务之和(1+1+1=3秒)
+const a = await query()  // 等1秒
+const b = await query()  // 等1秒
+const c = await query()  // 等1秒
+
+// 并发:总耗时 = 最慢那个(三个同时发起,只等1秒)
+const [a, b, c] = await Promise.all([query(), query(), query()])
+```
+- 关键:Promise.all 让多个任务**同时发起**,主线程不等单个完成,只等最慢那个收尾
+
+⭐⭐⭐ **"并发但不并行"的精确含义**:
+- **并发(concurrent)**:主线程不停切换任务,看起来同时(靠事件循环)
+- **并行(parallel)**:多个任务在同一时刻真正同时执行(靠多核多线程)
+- Node 单线程只能"并发",I/O 靠 libuv 线程池才能"并行"
+
+### 关48 事务隔离级别 + 锁
+
+⭐⭐⭐⭐⭐ **三个并发问题**(面试必背):
+| 问题 | 现象 | 一句话 |
+|---|---|---|
+| 脏读 | 读到**未提交**的数据(对方没 commit,先读了;对方若 rollback,数据就是假的) | 读"假"的(未提交) |
+| 不可重复读 | 同一**行**读两次,值变了(对方 commit 了 UPDATE) | 读"变"的(同一行被改) |
+| 幻读 | 同一**查询**执行两次,行**数量**变了(对方 commit 了 INSERT/DELETE) | 读"多/少"的(行数变) |
+
+🔥 **脏读关键词是「未提交」,不是「废弃」**(08-07 答错:废弃=已扔掉;脏读=还没确认,可能 commit 也可能 rollback)。
+严重程度:脏读 > 不可重复读 > 幻读。
+
+⭐⭐⭐⭐⭐ **四个隔离级别**(从宽松→严格,每升一级多防一个问题):
+| 隔离级别 | 防脏读 | 防不可重复读 | 防幻读 | 备注 |
+|---|---|---|---|---|
+| 读未提交 ReadUncommitted | ❌ | ❌ | ❌ | **导致脏读**(允许读未提交) |
+| 读已提交 ReadCommitted | ✅ | ❌ | ❌ | Oracle/PG 默认 |
+| 可重复读 RepeatableRead | ✅ | ✅ | ❌(MySQL 靠 Next-Key Lock 防住了!) | **MySQL 默认** |
+| 串行化 Serializable | ✅ | ✅ | ✅ | 最慢,事务排队(等同单线程) |
+
+🔥🔥🔥 **因果方向(08-07 答反过)**:**级别越高 → 防得越多,不是导致越多!**
+- ❌ "可重复读会导致脏读"(说反了)
+- ✅ "读未提交会导致脏读,可重复读防住脏读"
+- 级别每升一级,在低级别基础上**多防**一个问题
+
+⭐⭐ **为什么不全用最高级(串行化)?** 事务排队执行=丧失并发,1000 请求变 1 个 1 个处理。工程要权衡"够安全+性能可接受"。MySQL 选可重复读是折中。
+
+⭐⭐⭐ **锁的分类**:
+| 锁 | 思想 | 适合场景 | SQL/实现 |
+|---|---|---|---|
+| 悲观锁 | "肯定有人抢,先锁死" | 冲突频繁 | `SELECT ... FOR UPDATE`(排他锁) |
+| 乐观锁 | "大概率没人抢,失败再说" | 读多写少/冲突少 | version 字段 + WHERE version=x(关49实战) |
+| 共享锁(S锁/读锁) | 多人能读,不能改 | | `SELECT ... LOCK IN SHARE MODE` |
+| 排他锁(X锁/写锁) | 只有我能改 | | `FOR UPDATE`、UPDATE/DELETE 自带 |
+
+⭐ **Prisma 设置隔离级别**:
+```ts
+await this.prisma.$transaction(async (tx) => {
+  // DB 操作
+}, {
+  isolationLevel: 'ReadCommitted',   // 显式指定:ReadUncommitted/ReadCommitted/RepeatableRead/Serializable
+  timeout: 5000
+})
+```
+默认就是 MySQL 的 RepeatableRead。
+
+⭐⭐ **转账场景面试题**(三个要点):
+1. 必须用事务(A 扣钱 + B 加钱原子性)
+2. 选可重复读(不选读未提交,因为读未提交导致脏读,可能读到回滚中的假余额)
+3. 扣减时用 `SELECT ... FOR UPDATE` 锁住 A 那行,别的事务想改只能等 → 保证余额不变成负数
