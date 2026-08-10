@@ -1109,3 +1109,51 @@ JwtAuthGuard extends AuthGuard("jwt") {
 ### 💬 一句话总结
 
 > 今天最大的认知变化:**"隔离级别不是越严格导致问题越多,而是越严格防得越多"**——说反了就是面试事故。隔离级别的本质是"性能vs安全"的权衡:级别越高越安全但越慢,MySQL选可重复读是折中,工程上没有"全用最高级"这种事。
+
+---
+
+## Day 20 · 2026-08-10 · 关49 乐观锁实战(阶段A 第3关)
+
+### 📚 今日产出
+
+- **开工复习(闭卷4题)**:验证08-07三大突破能否复现
+  - 漏await时序链 ✅ → **连击2**(派活→libuv查→没等收尾→pending Promise truthy)
+  - JSON DSL格式 ⚠️ → **第5次踩!** 单引号+数值类型已改对,但**字段名 id→authorId 又漏**
+  - 隔离级别因果方向 ✅ → L1→L2(纠正同事"读未提交才导致脏读")
+  - ik分词方向 ✅ → L1→L2(索引多切召回/搜索少切精准/反过来召回率降)
+- **关49:乐观锁实战(文章防并发覆盖)**——完整走完"讲原理→骨架→用户写→实测"
+  - Lost Update(丢失更新)问题:赤裸 update 后写覆盖先写
+  - CAS思想:WHERE 带版本条件,count=0 判冲突
+  - 亲手写:schema加version字段 + UpdateArticleDto + updateMany+increment+ConflictException
+  - **HTTP 端到端实测全通过**:A成功(version 0→1)/B被409拒/C刷新后成功(version 1→2)
+
+### 🕳️ 踩坑(关49 共4个)
+
+1. **`data: {...dot}` 污染**(踩坑1):DTO 里 version 被展开进去,覆盖 increment → version 永远是0,乐观锁坏了。改:显式列 title/content + increment
+2. **异常类选错**(踩坑2):`NotFoundException`(404)→ 应是 `ConflictException`(409)。版本冲突不是"不存在",是"状态冲突"
+3. **return `{...article, ...dot}` hack**(踩坑3):拿更新前的旧对象+DTO合并,version还是旧的。改:updateMany后 findUnique 拿真实数据
+4. **update 调 findOne 架构问题**(踩坑4,最深):findOne 带 zIncrBy(排行榜)+kafka.send(浏览日志)副作用 → 编辑一次=记一次浏览=假排行+脏数据+连累 update 500。改:findUnique 只查数据
+
+### 🎯 追问表现
+
+- Q1 update vs updateMany ✅(update抛异常没法区分,updateMany返回count)
+- Q2 increment 好在哪 ⚠️("数据库操作逻辑干净"太虚)→ 补讲:应用层读出来算有并发窗口,数据库侧原子
+- Q3 update调findOne合不合理 ✅(会重复计算浏览量)→ 抓到架构层面设计错误
+
+### 📈 能力跃迁
+
+| 维度 | Day 19 | Day 20 |
+|---|---|---|
+| 并发问题认知 | 只懂隔离级别理论 | ✅ 亲手实现乐观锁,实测 CAS 生效 |
+| 异常类选用 | 含糊 | ✅ 404/409/403 分得清,版本冲突=409 |
+| 架构思维 | 单个方法看 | ✅ 能看出"update调findOne带副作用"的设计错误 |
+| 抽考表现 | 三大盲区突破 | ✅ **三大突破全部复现**(漏await连击2/因果L2/ik分词L2) |
+
+### 🎯 明天计划
+
+- 🔴 JSON DSL 字段名(id→authorId)第5次踩,明天重点验证"写DSL前扫schema"
+- 关50:缓存与 DB 一致性(Cache-Aside 先删缓存还是先更新DB;延迟双删)
+
+### 💬 一句话总结
+
+> 今天最大的认知变化:**"副作用隔离"**——一个方法干一件事,update 就是更新数据,别让它顺手刷排行/发Kafka日志。这不只是代码风格,是架构问题:findOne 的依赖挂了,连累 update 一起 500,而 update 本身根本没错。写代码不是把功能堆进去,是让每个模块各司其职、互不连累。

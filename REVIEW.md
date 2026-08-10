@@ -1399,3 +1399,101 @@ await this.prisma.$transaction(async (tx) => {
 1. 必须用事务(A 扣钱 + B 加钱原子性)
 2. 选可重复读(不选读未提交,因为读未提交导致脏读,可能读到回滚中的假余额)
 3. 扣减时用 `SELECT ... FOR UPDATE` 锁住 A 那行,别的事务想改只能等 → 保证余额不变成负数
+
+### 关49 乐观锁实战(文章防并发覆盖)
+
+⭐⭐⭐⭐⭐ **Lost Update(丢失更新)** —— 乐观锁要解决的问题:
+```
+时间线    用户A              用户B
+T1      打开文章(version=0)
+T2                         打开文章(version=0,同一份旧数据)
+T3      改标题,保存(version=0→1)
+T4                         改标题,保存(用 version=0 覆盖 → A 的修改丢了!)
+```
+- 赤裸 `update({where:{id}, data:{...}})` **只按 id 定位,不验版本** → 后写覆盖先写,A 白干了
+- 高发场景:多人编辑同一文档、库存扣减、账户余额、秒杀库存
+
+⭐⭐⭐⭐⭐ **CAS(Compare And Swap)乐观锁思想**:
+> 不锁,先干。但提交时验一眼——如果读到的版本过期了,拒绝。
+
+```
+① 读数据时,拿到 version(如 0)
+② 用户编辑(可能花 10 分钟)
+③ 提交时:UPDATE ... WHERE id=5 AND version=0
+   ├─ 没人动过 → version 还是 0 → 匹配 → 成功 + version+1
+   └─ 有人动过 → version 已经 1 → 不匹配 → count=0 → 拒绝(409)
+```
+
+🔥🔥🔥 **为什么用 updateMany 不用 update?**(关49 实测踩坑):
+| | WHERE 不匹配时 | 返回值 |
+|---|---|---|
+| `update` | **直接抛异常 P2025** → 500 脱敏成"服务器内部错误" | 更新后对象 |
+| `updateMany` | **静默,不报错** | `{ count: 0 }` |
+
+- `update` 抛异常没法区分"不存在"还是"版本冲突"
+- `updateMany` 返回 count=0 → 优雅抛 `ConflictException`(409)
+- **记忆:CAS 场景永远用 updateMany**
+
+⭐⭐⭐ **完整 CAS update 方法**(自己写的):
+```ts
+async update(id: number, dto: UpdateArticleDto, userId: number) {
+    const article = await this.prisma.article.findUnique({ where: { id } })
+    if (article?.authorId !== userId) throw new ForbiddenException("只能编辑自己的文章")
+
+    const { count } = await this.prisma.article.updateMany({
+        where: { id, version: dto.version },              // ← WHERE 带版本条件(CAS 核心)
+        data: {
+            title: dot.title,
+            content: dot.content,
+            version: { increment: 1 }                      // ← Prisma 原子 +1 操作符
+        }
+    })
+    if (count === 0) throw new ConflictException("文章已被他人修改,请刷新后重试")
+    await this.redis.del(`article:${id}`)
+    const updated = await this.prisma.article.findUnique({ where: { id } })  // 拿真实数据
+    return updated
+}
+```
+
+🔥🔥 **version 字段必须用 `{ increment: 1 }`**(关49 踩坑 1):
+```ts
+// ❌ data: { ...dot } → DTO 里的 version(0)覆盖回去,version 永远是 0,乐观锁坏了!
+// ❌ data: { version: dto.version + 1 } → CAS 场景能用,但...
+// ✅ data: { version: { increment: 1 } } → Prisma 生成 SQL `version = version + 1`,数据库侧原子
+```
+- **自己涨的数(版本/计数),交给数据库 increment,别在应用层读出来算**
+- 应用层算(`viewCount + 1`)有并发窗口:两请求都读到 100 → 都写 101 → 实际该 102,丢了 1
+- increment 是一条 SQL `SET version = version + 1`,行锁保护,原子
+
+🔥🔥 **异常类要选对**(关49 踩坑 2):
+- `NotFoundException`(404)→ 资源**不存在**
+- `ConflictException`(409)→ 资源存在,但**状态冲突**(版本冲突、重复创建、并发覆盖)
+- `ForbiddenException`(403)→ 存在,但**没权限**
+- count=0 走到这里说明版本冲突(不是不存在,因为前面 findUnique 已校验过)→ 必须 409
+
+🔥🔥🔥 **update 不要调 findOne**(关49 踩坑 3,架构问题):
+```ts
+// ❌ update 结尾调 findOne → findOne 会 zIncrBy(排行榜+1)+ kafka.send(浏览日志)
+//    编辑一次文章 = 记一次"浏览" = 排行榜刷假分 + Kafka 脏数据 + 依赖挂了连累 update 500
+const updated = await this.findOne(id)
+// ✅ 用 findUnique,只查数据,不带副作用
+const updated = await this.prisma.article.findUnique({ where: { id } })
+```
+- **副作用隔离原则**:查数据的方法就只查数据,别夹带"记录浏览量/刷排行"等业务动作
+- 一个方法干一件事,update 成功不该被 findOne 的依赖(Kafka/Redis)故障拖下水
+
+⭐ **UpdateArticleDto 设计**(继承而非改原 DTO):
+```ts
+export class UpdateArticleDto extends CreateArticleDto {
+    version!: number   // 创建时不需要 version,更新时才需要
+}
+```
+- 创建文章时根本不存在 version,所以新建 DTO 而非在 CreateArticleDto 上加字段
+
+🔥 **HTTP 实测验证(端到端)**(08-10 实跑结果):
+```
+【用户A】version=0 → 200 成功,version 升到 1 ✅
+【用户B】拿旧 version=0 → 409 Conflict 被拒 ✅
+【用户C】刷新后 version=1 → 200 成功,version 升到 2 ✅
+【最终】标题="C改的标题",version=2,B 的覆盖被挡住,A 的数据没丢
+```
