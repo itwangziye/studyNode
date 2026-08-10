@@ -3,7 +3,7 @@ import { ArticleService } from './articles.service';
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
-import { CreateArticleDto } from "./dto/create-article.dto";
+import { CreateArticleDto, UpdateArticleDto } from "./dto/create-article.dto";
 import { ThrottleGuard } from "../common/guards/throttle.guard";
 import { BatchCreateArticleDto } from "./dto/batch-create-article.dto";
 import { ArticleSearchService } from './article-search.service';
@@ -60,7 +60,7 @@ export class ArticlesController {
 
     @Put(":id")
     @UseGuards(JwtAuthGuard)
-    async update(@Param("id", ParseIntPipe) id: number, @Body() dot: CreateArticleDto, @CurrentUser() user) {
+    async update(@Param("id", ParseIntPipe) id: number, @Body() dot: UpdateArticleDto, @CurrentUser() user) {
         const article = await this.articleService.update(id, dot, user.userId)
         return article
     }

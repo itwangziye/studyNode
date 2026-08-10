@@ -38,6 +38,7 @@ model Article {
   author      User?   @relation(fields: [authorId], references: [id])
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   comments  Comment[]  
+  version   Int       @default(0)
 
   @@map("articles")
 }

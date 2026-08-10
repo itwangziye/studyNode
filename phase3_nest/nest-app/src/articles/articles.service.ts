@@ -1,6 +1,6 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { RedisService } from "../redis/redis.service";
-import { CreateArticleDto } from "./dto/create-article.dto";
+import { CreateArticleDto, UpdateArticleDto} from "./dto/create-article.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { RabbitmqService } from "../rabbitmq/rabbitmq.service";
 import { KafkaService } from "../kafka/kafka.service";
@@ -134,14 +134,23 @@ export class ArticleService {
         return false
     }
 
-    async update(id: number, dot: CreateArticleDto, userId: number) {
+    async update(id: number, dot: UpdateArticleDto, userId: number) {
         const article = await this.prisma.article.findUnique({where: {id}});
         if (article?.authorId !== userId) {
              throw new ForbiddenException("只能编辑自己的文章")
         }
-        const articleFlag = await this.prisma.article.update({where: {id}, data: {...dot}})
+        const {count} = await this.prisma.article.updateMany({
+            where: {id, version: dot.version}, 
+            data: {
+                title: dot.title,
+                content: dot.content,
+                version: { increment: 1 }
+            }
+        })
+        if (count === 0) throw new ConflictException("文章已被他人修改,请刷新后重试")
         await this.redis.del(`article:${id}`)
-        return articleFlag
+        const updated = await this.prisma.article.findUnique({ where: { id } })        
+        return updated
     }
 
     async getRanking(topN: number) {
