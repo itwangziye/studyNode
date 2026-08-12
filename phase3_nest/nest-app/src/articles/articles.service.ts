@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { RedisService } from "../redis/redis.service";
 import { CreateArticleDto, UpdateArticleDto} from "./dto/create-article.dto";
 import { PrismaService } from "../prisma/prisma.service";
@@ -86,8 +86,48 @@ export class ArticleService {
         return article
     }
 
-    async create(dto: CreateArticleDto, userId: number) {
+    async create(dto: CreateArticleDto, userId: number, idemKey?: string) {
+        const casheKey = `idem:${idemKey}`;
+        const lockKey = `idem:lock:${idemKey}`;
+
+        if (idemKey) {
+            let cachedData = await this.redis.get(casheKey);
+            if (cachedData) return JSON.parse(cachedData);
+            const lock = await this.redis.setNx(lockKey, "1", 3);
+            
+            if (lock) {
+                try {
+                    const cached = await this.redis.get(casheKey)
+                    if (cached) return JSON.parse(cached) 
+
+                    const article = await this.prisma.article.create({data: {title: dto.title, content: dto.content, authorId: userId}})
+                    await this.redis.set(`idem:${idemKey}`, JSON.stringify(article), 86400)
+
+                    await this.redis.delByPattern("article:list:*")
+
+                    const channel = this.rabbit.getChannel();
+                    channel.assertExchange("article.events", "fanout", {durable: true});
+                    const articleBuffer = Buffer.from(JSON.stringify({articleId: article.id, title: article.title, content: article.content, authorId: article.authorId}))
+                    channel.publish("article.events", "", articleBuffer)
+                    return article
+                } finally {
+                    this.redis.delOk(lockKey)
+                }
+            } else {
+                const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+                for (let i = 0; i < 30; i++) {
+                    await sleep(50)                          // 等 50ms
+                    const cached = await this.redis.get(casheKey)  // 重新查缓存
+                    if (cached) return JSON.parse(cached)
+                }
+                throw new HttpException("请求繁忙，请稍后再试", 429)
+            }
+
+        }
+
         const article = await this.prisma.article.create({data: {title: dto.title, content: dto.content, authorId: userId}})
+        if(idemKey) await this.redis.set(`idem:${idemKey}`, JSON.stringify(article), 86400)
+
         await this.redis.delByPattern("article:list:*")
 
         const channel = this.rabbit.getChannel();
@@ -127,6 +167,7 @@ export class ArticleService {
 
         const data = await this.prisma.article.deleteMany({where: {id}})
         await this.redis.del(`article:${id}`)
+        await this.redis.delByPattern("article:list:*")
 
         if (data.count > 0) {
             return true
@@ -149,6 +190,7 @@ export class ArticleService {
         })
         if (count === 0) throw new ConflictException("文章已被他人修改,请刷新后重试")
         await this.redis.del(`article:${id}`)
+        await this.redis.delByPattern("article:list:*")
         const updated = await this.prisma.article.findUnique({ where: { id } })        
         return updated
     }

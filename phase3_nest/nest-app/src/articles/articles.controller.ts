@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Post, Put, Query, UseGuards, Headers} from "@nestjs/common";
 import { ArticleService } from './articles.service';
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -53,8 +53,12 @@ export class ArticlesController {
 
     @Post()
     @UseGuards(JwtAuthGuard, ThrottleGuard)
-    async create(@Body() dot: CreateArticleDto, @CurrentUser() user) {
-        const article = await this.articleService.create(dot, user.userId)
+    async create(
+        @Body() dot: CreateArticleDto, 
+        @CurrentUser() user,
+        @Headers('idempotency-key') idemKey?: string, 
+    ) {
+        const article = await this.articleService.create(dot, user.userId, idemKey)
         return article
     }
 
