@@ -1497,3 +1497,137 @@ export class UpdateArticleDto extends CreateArticleDto {
 【用户C】刷新后 version=1 → 200 成功,version 升到 2 ✅
 【最终】标题="C改的标题",version=2,B 的覆盖被挡住,A 的数据没丢
 ```
+
+---
+
+### 关50 缓存与 DB 一致性(Cache-Aside 深入)
+
+⭐⭐⭐⭐⭐ **核心问题:写 DB 时,缓存什么时候删才不读脏数据?**
+
+🔥🔥 **方案对比:先删缓存 vs 先更 DB**
+
+**方案 A:先删缓存,后更 DB ❌(翻车)**
+```
+T1 请求1(写):del 缓存       → 缓存空
+T2 请求2(读):未命中 → 查 DB(旧值)→ set 缓存(旧值)🔥 致命回填
+T3 请求1(写):update DB     → DB 新值
+结果:DB=新值,缓存=旧值,撑到 TTL 过期才自愈
+```
+- **翻车根因不是"读到旧值"**(写之前的并发读读到旧值正常),而是**读请求把旧值回填进了缓存**,而 DB 更新在回填之后,缓存再也等不到更新
+
+**方案 B:先更 DB,后删缓存 ✅(标准 Cache-Aside)**
+```
+T1 请求1(写):update DB     → DB 新值
+T2 请求1(写):del 缓存       → 缓存空
+T3 请求2(读):未命中 → 查 DB(新值)→ set 缓存(新值)✓
+结果:DB=新值,缓存=新值,一致
+```
+- 删缓存在更 DB 之后,任何"未命中回填"的读请求查到的都已经是新值
+
+⭐⭐⭐ **延迟双删(强一致场景才用,救方案 A/B 的极端漏洞)**
+
+方案 B 也有极小概率翻车(缓存恰好过期 + 读请求查到旧值 + 回填晚于 del)。解法:
+```ts
+await this.redis.del(key)                     // ① 第一次删:清场,删掉写之前就存在的旧缓存
+await this.prisma.article.updateMany({...})   // ② 更 DB
+await sleep(500)                              // ③ 等"窗口期内读请求回填旧值"的动作跑完
+await this.redis.del(key)                     // ④ 第二次删 🔥:清除窗口期被读请求回填的脏数据
+```
+🔥 **第二次删才是延迟双删的灵魂**——它删的不是"正常旧缓存",而是「第一次删之后 → 第二次删之前」窗口期里,读请求查 DB(旧值)回填的脏数据。sleep 就是等这个回填动作完成再删。
+- **工程取舍**:普通业务(博客)用方案 B 就够(旧标题多停 60 秒无所谓);强一致场景(价格/库存/余额)才上延迟双删,代价 = 多一次 del + 一次 sleep(拖慢写)
+
+⭐⭐⭐ **delByPattern 为什么放在 `$transaction` 外面**
+```ts
+const result = await this.prisma.$transaction(async (tx) => {
+  // ... tx.article.create
+})
+await this.redis.delByPattern("article:list:*")  // ← 事务外,不能放回调里
+```
+三个原因:
+1. **职责分离**:事务只管 DB 原子性,Redis 操作是副作用,不应耦合
+2. **Redis 失败拖垮事务**:delByPattern 放事务里,它一旦失败(网络/超时)抛异常,会导致**本来成功的 DB 事务被回滚**
+3. **拉长事务持锁**:delByPattern 内部用 `keys` 命令(大数据量慢),放事务里拉长持有锁时间,降低并发。事务要尽快提交
+
+🔥 **实战 bug:update/remove 漏删列表缓存**(08-12 自己发现 + 自己修)
+```ts
+// ❌ 修复前:只删详情缓存,列表缓存里还是旧标题(60-90秒不一致)
+await this.redis.del(`article:${id}`)
+
+// ✅ 修复后:详情 + 列表两个缓存都删(顺序保持方案 B:先更 DB 后删)
+await this.redis.del(`article:${id}`)
+await this.redis.delByPattern("article:list:*")  // 补上!
+```
+- create 想到了删列表,但 update/remove 是后加的,漏了——典型"删一半"
+
+⭐ **HTTP 实测验证(端到端)**(08-12 实跑结果):
+```
+更新前:article:list:1:50 有值([{"id":2,...旧标题...}])
+PUT 更新(旧标题→新标题)→ 200
+更新后:article:list:1:50 → (空,已删除 ✅ delByPattern 生效)
+重新 GET:缓存从 DB 重读重建 + 列表含新标题 ✅
+```
+- 不加 delByPattern,列表继续吐旧标题 60-90 秒;加上后立即一致
+
+---
+
+### 关51 幂等性设计
+
+⭐⭐⭐⭐⭐ **幂等本质** = 执行 1 次和执行 N 次,系统的最终状态完全一样。
+- HTTP 方法:GET(只读)✅ / PUT(覆盖,同值N次终态一样)✅ / DELETE(删了再删状态不变)✅ / **POST ❌**(每次创建新资源,点N次生N条)
+
+⭐⭐⭐⭐⭐ **前端防手滑 ≠ 后端幂等**(回扣关6"不信任客户端"):
+| 层 | 防什么 | 工具 |
+|---|---|---|
+| 前端防抖/置灰 | 用户手滑 | 体验优化,可被绕过(curl/改JS) |
+| 后端幂等 | **网络重试**/MQ重投(客户端不可控!) | idempotency-key |
+| 后端限流 | 恶意刷/高频 | ThrottleGuard(关24) |
+
+- 用户只点一次,网络超时 axios 自动重试 → 服务端收 2 次 → 只有后端幂等拦得住
+- API 不只给浏览器用(App/小程序/第三方没有你的前端限制);MQ 消费者根本没有前端
+
+⭐⭐⭐⭐ **idempotency-key 时机**(同一意图同 key,重试复用,新意图换新):
+- 打开写文章页 → 生成一次 key;提交/重试 → 复用同一个;点"再写一篇" → 重新生成
+- 类比:银行转账流水号,一张单子一个号,重试用同一个,新单子换新的
+- key 生命周期 = 一个表单/一次编辑会话
+
+⭐⭐⭐⭐ **幂等 4 种企业方案**(按场景选型):
+| 场景 | 方案 | 例子 |
+|---|---|---|
+| 注册/唯一业务 | DB 唯一约束(最省事) | email 唯一,重复插报错 |
+| 表单提交 | 一次性 token | 提交校验+删除 |
+| 订单/支付 | 幂等 key/业务流水号 | 微信支付 out_trade_no |
+| 状态流转 | 状态机 | "已支付"不能重复支付 |
+
+⭐⭐⭐⭐⭐ **并发幂等(核心流程,面试默写)**:
+```ts
+async create(dto, userId, idemKey?: string) {
+    if (idemKey) {
+        const cachedData = await this.redis.get(`idem:${idemKey}`)
+        if (cachedData) return JSON.parse(cachedData)          // ① 先查缓存
+        const lock = await this.redis.setNx(`idem:lock:${idemKey}`, "1", 3)  // ② 抢锁(粒度=每个key一把锁,EX防死锁)
+        if (lock) {
+            try {
+                const cached = await this.redis.get(`idem:${idemKey}`)
+                if (cached) return JSON.parse(cached)          // ③ 双检!抢到锁≠该干活,前面的人可能干完了
+                const article = await this.prisma.article.create({...})
+                await this.redis.set(`idem:${idemKey}`, JSON.stringify(article), 86400)  // ④ 存幂等记录(24h)
+                return article
+            } finally {
+                await this.redis.delOk(`idem:lock:${idemKey}`) // ⑤ 释放锁
+            }
+        } else {
+            // ⑥ 没抢到:自旋查缓存(30次×50ms),查到 return,超时 429
+        }
+    }
+    // 无 key:不幂等,正常创建
+}
+```
+🔥 **双检为什么必须**:查缓存和抢锁是**两个独立时刻**——C 查缓存时 A 未写(未命中),C 抢锁时 A 已释放(抢到),中间隔着 A 的整个 create。不双检 → C 抢到锁直接 create → 重复。
+🔥 **抢锁失败者不碰锁**:双检+delOk 只属于锁内;没抢到锁的 delOk 会删别人的锁(锁语义破坏)。
+🔥 **幂等 key 为空必须跳过**(`if (idemKey)` 查/存两头包):否则 `idem:undefined` 被写一次后,所有不带 header 的请求全被误判重复!
+
+⭐⭐⭐ **锁过期 vs 业务耗时**(关52预告):锁 EX=3s,业务 create+MQ 卡 >3s → 锁提前过期 → 别人抢到锁 → 双检也救不了(记录还没写)→ 重复。生产用**锁续期(看门狗)**。
+
+⭐⭐⭐ **MQ 消费者去重**(联动关45):消息 at-least-once 会重投,消费者 SET NX `processed:${msgId}`:
+- **SET NX = 一条命令原子完成"判重+占位"**,不是"先查后存"两步(两步有窗口,两个消费者都 get 不到 → 都 set → 重复)
+- 返回 OK=第一次,执行+ack;返回 null=重复,直接 ack 跳过
