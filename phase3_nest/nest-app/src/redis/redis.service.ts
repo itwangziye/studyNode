@@ -65,9 +65,46 @@ export class RedisService implements OnModuleDestroy {
     return await this.client.set(key, value, "EX", ttlSeconds, "NX")
   }
 
-  // 释放锁:删掉 key
+  // 释放锁:删掉 key(不校验归属,简单场景用)
   async delOk(key: string): Promise<void> {
     await this.client.del(key)
+  }
+
+  // ============================================================
+  // 分布式锁续期 / 解锁(关 52):锁归属校验 + Lua 原子操作
+  // ============================================================
+  // 问题:setNx 抢锁时 value 如果是固定 "1",那锁没有"主人"。
+  //   锁一旦过期被别人抢走(写入他的 value),你的看门狗 expire / finally delOk
+  //   会误操作【别人的锁】——续了别人的命、删了别人的锁。
+  // 解法:value 存唯一 token(锁的身份证)。续期/删除前先校验"这锁还是我的 token"。
+  //   而【校验 + 操作】必须用 Lua 脚本原子执行——否则两步之间锁可能易主:
+  //     get 比对成功(还是我的) → 此刻锁恰好过期 → 别人 setNx 抢到 → 我的 expire/del 落到别人的锁上
+  //   这和 SET NX 一个道理:多步操作必须焊成原子,消除竞态窗口。
+  private static readonly RENEW_LOCK_SCRIPT = `
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('expire', KEYS[1], ARGV[2])
+    else
+      return 0
+    end
+  `
+  private static readonly UNLOCK_SCRIPT = `
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('del', KEYS[1])
+    else
+      return 0
+    end
+  `
+
+  // 原子续期(看门狗用):锁的 value 还是 token 才 expire
+  // 返回 1=续上了;0=锁已易主(过期被别人抢),不再续——别把别人的锁续了命
+  async renewLock(key: string, token: string, ttlSeconds: number): Promise<number> {
+    return (await this.client.eval(RedisService.RENEW_LOCK_SCRIPT, 1, key, token, ttlSeconds)) as number  
+  }
+
+  // 原子解锁:锁的 value 还是 token 才 del(防止删别人的锁)
+  // 返回 1=删了;0=锁已易主,不删
+  async unlock(key: string, token: string): Promise<number> {
+    return (await this.client.eval(RedisService.UNLOCK_SCRIPT, 1, key, token)) as number
   }
 
   // ============================================================

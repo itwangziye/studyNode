@@ -89,16 +89,18 @@ export class ArticleService {
     async create(dto: CreateArticleDto, userId: number, idemKey?: string) {
         const casheKey = `idem:${idemKey}`;
         const lockKey = `idem:lock:${idemKey}`;
-
         if (idemKey) {
             let cachedData = await this.redis.get(casheKey);
             if (cachedData) return JSON.parse(cachedData);
-            const lock = await this.redis.setNx(lockKey, "1", 3);
-            
+            const lockToken = crypto.randomUUID();
+            const lock = await this.redis.setNx(lockKey, lockToken, 10);
             if (lock) {
+                const watchDog = setInterval(() => {
+                    this.redis.renewLock(lockKey, lockToken, 10)
+                }, 3000)
                 try {
                     const cached = await this.redis.get(casheKey)
-                    if (cached) return JSON.parse(cached) 
+                    if (cached) return JSON.parse(cached)
 
                     const article = await this.prisma.article.create({data: {title: dto.title, content: dto.content, authorId: userId}})
                     await this.redis.set(`idem:${idemKey}`, JSON.stringify(article), 86400)
@@ -111,7 +113,8 @@ export class ArticleService {
                     channel.publish("article.events", "", articleBuffer)
                     return article
                 } finally {
-                    this.redis.delOk(lockKey)
+                    clearInterval(watchDog)
+                    this.redis.unlock(lockKey, lockToken)
                 }
             } else {
                 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -126,7 +129,6 @@ export class ArticleService {
         }
 
         const article = await this.prisma.article.create({data: {title: dto.title, content: dto.content, authorId: userId}})
-        if(idemKey) await this.redis.set(`idem:${idemKey}`, JSON.stringify(article), 86400)
 
         await this.redis.delByPattern("article:list:*")
 
