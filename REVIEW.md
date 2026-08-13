@@ -1631,3 +1631,79 @@ async create(dto, userId, idemKey?: string) {
 ⭐⭐⭐ **MQ 消费者去重**(联动关45):消息 at-least-once 会重投,消费者 SET NX `processed:${msgId}`:
 - **SET NX = 一条命令原子完成"判重+占位"**,不是"先查后存"两步(两步有窗口,两个消费者都 get 不到 → 都 set → 重复)
 - 返回 OK=第一次,执行+ack;返回 null=重复,直接 ack 跳过
+
+---
+
+# 关 52:分布式锁进阶(超越 SET NX)
+
+> 阶段 A 收尾。把 SET NX 锁的三个结构性漏洞逐个拆:**锁活不过业务 / 锁没有主人 / 主从切换丢锁**。
+> 落地代码:`articles.service.ts` 的 `create` 并发幂等分支 + `redis.service.ts` 新增 `renewLock`/`unlock`(Lua)。
+
+## 漏洞一:锁活不过业务(过期时间两难)
+
+**两难本质**——过期时间设多少都赌错:
+- 设**短**(3s):业务(create+MQ)卡 >3s → 锁提前释放 → 别人抢到 → 并发/幂等失效
+- 设**长**(300s):持锁者崩溃 → 锁占着不放 300s → 别人干等 → 可用性受损
+- 根源:业务耗时不可控(GC/慢查询/MQ 抖动),定多少秒都在赌
+
+**解法:看门狗(watchdog)** —— 不再赌过期时间,让它动起来:
+```ts
+const lock = await this.redis.setNx(lockKey, token, 10)   // 10秒=崩溃兜底,不是赌业务耗时
+if (lock) {
+  const watchDog = setInterval(() => {                    // 后台定时器
+    this.redis.renewLock(lockKey, token, 10)              // 续命:重置回10秒
+  }, 3000)                                                 // 间隔 = 过期/3,留安全边际
+  try { /* 业务 */ }
+  finally {
+    clearInterval(watchDog)                                // 先停狗!
+    this.redis.unlock(lockKey, token)                      // 再删锁(反了→狗把删掉的锁续回成孤儿)
+  }
+}
+```
+- 正常运行:狗不停续命,锁永不过期 → 治"过早释放"
+- 进程崩溃:狗跟着死,锁自然过期 → 治"过长占用"
+- **过期时间语义变了:不再是「赌业务耗时」,而是「崩溃后的等待上限」**
+
+**实测铁证**:业务 sleep 15s(>锁10s),redis-cli 反复 `ttl` → ttl 在 7~10 徘徊、反复续回 10、永不归零 → 锁活过了整个业务。
+
+## 漏洞二:锁没有主人(token + Lua 原子校验)
+
+**问题**:value 固定 "1" → 锁没主人。锁过期被别人抢走(写入他的 value)后,你的看门狗 `expire` 续了**别人的命**、你的 `del` 删了**别人的锁**。
+
+**解法**:① value 存唯一 **token**(`crypto.randomUUID()`,锁的身份证);② 续期/删除前校验"还是我的 token",且**校验+操作必须 Lua 原子**:
+```lua
+if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end
+```
+- 为什么必须 Lua、不能"先 get 比对再 expire"两步:两步之间锁可能易主(get 成功 → 此刻过期 → 别人抢 → 我的 expire 落别人锁上)。**Lua 在 Redis 单线程执行、不可打断,焊死竞态窗口**
+- 🔥 **通族原理**:**任何"先判断再操作"的多步逻辑,并发下都要焊成原子** —— 简单用单条命令(SET NX)/ 复杂用 Lua 脚本 / 事务用 SELECT...FOR UPDATE,本质同一件事
+- `ioredis.eval()` 返回 `unknown`(Lua 返回值运行时才定)→ 方法签名 `Promise<number>` 用 `as number` 类型断言
+
+**实测**:redis-cli 演 `unlock(tokenB)` 返回 0 不删(锁还在) / `unlock(tokenA)` 返回 1 删掉 → 别人的锁误删不了。
+
+## 漏洞三:主从切换丢锁(Redlock + 争议)
+
+**SET NX 锁的结构性缺陷**:Redis 主从复制是**异步**的,主写入立刻回 OK,**然后才**慢慢同步从(不等从确认):
+```
+A→master SET lock NX→master回OK(A以为抢到)→准备同步从→master挂了
+→哨兵提升从为新主→新主上没这把锁(没来得及同步)→B SET lock NX→OK→A和B都以为有锁 💥
+```
+- 🔥 **看门狗救不了**:续的是"还在的锁",锁消失了没东西可续(治「时间问题」治不了「存在性问题」)
+- **token 也救不了**:token 防"锁还在但易主",这里是"锁直接消失"
+
+**Redlock**(antirez):N 个独立 Redis(非主从),抢锁要多数(N/2+1),单点 failover 不影响多数。
+
+**争议**(面试爱考):
+- **Kleppmann**(DDIA 作者)批:GC 停顿陷阱 + 时钟漂移 → 强一致该用 **Zookeeper/etcd**(共识算法 Raft/Paxos,不依赖时钟)
+- **antirez** 回应:配 NTP 可控,Redlock 简单性能好
+
+**选型口诀**(记死):
+
+| 场景 | 方案 | 理由 |
+|---|---|---|
+| 普通业务(点赞/缓存/限流/幂等) | 单 Redis + SET NX + 看门狗 + token | failover 失效概率极低,可容忍 |
+| 钱/强一致(支付) | Zookeeper / etcd | 共识算法保 CP,不依赖时钟 |
+| 秒杀/高并发库存 | **不用锁,Redis 原子扣减(Lua DECR)+ DB 兜底** | 锁串行化 QPS 低;Lua 无锁并发扛几万 QPS(阶段D关64) |
+
+**三层锁演进**(面试答"分布式锁怎么实现"):① SET NX 基础版(单点有 failover 缺陷)→ ② 看门狗+token 进阶版(治过期+归属)→ ③ Redlock/共识算法终极版(治 failover,争议取舍)。
+
+🔥 **锁只是优化,不是绝对正确性保障**——关键业务(钱/库存)永远要 DB 约束兜底(唯一约束/version/乐观锁)。锁挂了 DB 还能拦。
