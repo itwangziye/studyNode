@@ -8,9 +8,9 @@ import {
   ArgumentsHost,        // 执行上下文,能拿到 request/response(跨协议抽象)
   HttpException,        // NestJS 内置 HTTP 异常基类
   HttpStatus,           // HTTP 状态码枚举
-  Logger,               // NestJS 内置日志器(带类名前缀,比 console.log 规范)
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { LoggerService } from '../logger/logger.service';
 
 /**
  * 统一响应格式契约:
@@ -24,7 +24,10 @@ import { Request, Response } from 'express';
 // 对比 @Catch(HttpException) 只捕获 HTTP 异常,未知错误会漏给框架默认处理(500 + 泄露)
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  private readonly logger = new Logger(AllExceptionsFilter.name);
+
+  constructor(
+    private readonly logger: LoggerService
+  ) {}
 
   // exception: 实际抛出的异常对象(unknown 类型,要先 instanceof 判断)
   // host:      执行上下文,能拿到 request/response(因为 NestJS 不绑定具体协议)
@@ -51,16 +54,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
           : Array.isArray((res as any).message)
             ? (res as any).message.join('; ')   // 校验错误数组合并成一句
             : (res as any).message || exception.message;
+
+      this.logger.warn("请求异常-已知", { method: request.method, url: request.url, status, message })
     } else {
       // —— 未知异常:DB 连接断开、JSON.parse 失败、代码 bug...
       // 绝不把内部错误细节(堆栈/SQL)泄露给客户端!这是安全红线
       status = HttpStatus.INTERNAL_SERVER_ERROR; // 500
       message = '服务器内部错误,请稍后重试';
       // 详细错误写日志(服务端可见),方便排查
-      this.logger.error(
-        `💥 未处理异常 ${request.method} ${request.url}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
+      this.logger.error("请求异常", {
+        method: request.method,
+        url: request.url,
+        status,
+        message
+      })
     }
 
     // ② 输出统一格式(注意 code 用 HTTP 状态码,和 status 一致)

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TasksModule } from './tasks/tasks.module';
@@ -12,14 +12,36 @@ import { AuthModule } from './auth/auth.module';
 import { ArticlesModule } from './articles/articles.module';
 import { CommentModule } from './comment/comment.module';
 import { ElasticsearchModule } from './elasticsearch/elasticsearch.module';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { RequestContextModule } from './common/context/request-context.module';
+import { LoggerModule } from './common/logger/logger.module';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 
 @Module({
-  imports: [PrismaModule, RedisModule, ElasticsearchModule, RabbitmqModule, KafkaModule, TasksModule, AuthModule, ArticlesModule, CommentModule],
+  imports: [PrismaModule, RedisModule, LoggerModule, RequestContextModule, ElasticsearchModule, RabbitmqModule, KafkaModule, TasksModule, AuthModule, ArticlesModule, CommentModule],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TransformInterceptor
+    },
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter
+    }
+  ],
 })
-export class AppModule {
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+    .apply(RequestIdMiddleware)
+    .forRoutes("*")
+  }
+
   constructor(
     private readonly rabbitmq: RabbitmqService,
     private readonly kafka: KafkaService,

@@ -6,6 +6,8 @@ import { RabbitmqService } from "../rabbitmq/rabbitmq.service";
 import { KafkaService } from "../kafka/kafka.service";
 import { BatchCreateArticleDto } from "./dto/batch-create-article.dto";
 import { Article } from "../generated/prisma/client";
+import { RequestContextService } from "../common/context/request-context.service";
+import { LoggerService } from "../common/logger/logger.service";
 
 @Injectable()
 export class ArticleService {
@@ -13,7 +15,9 @@ export class ArticleService {
         private readonly prisma: PrismaService,
         private readonly redis: RedisService,
         private readonly rabbit: RabbitmqService,
-        private readonly kafka: KafkaService
+        private readonly kafka: KafkaService,
+        private readonly requestContext: RequestContextService,
+        private readonly logger: LoggerService
     ) {}
 
     private getRandomTtl(base: number, jitter: number): number {
@@ -26,7 +30,10 @@ export class ArticleService {
 
         const cachedData = await this.redis.get(cacheKey);
 
-        if (cachedData) return JSON.parse(cachedData);
+        if (cachedData) {
+            this.logger.info('文章列表-缓存命中', { page, pageSize })
+            return JSON.parse(cachedData);
+        }
 
 
         const skip = (page - 1) * pageSize;
@@ -42,6 +49,8 @@ export class ArticleService {
                 }
             }
         })
+        this.logger.info('文章列表-DB查询', { page, pageSize, count: articles.length })
+
         await this.redis.set(cacheKey, JSON.stringify(articles), this.getRandomTtl(60, 30))
 
         return articles
@@ -63,9 +72,7 @@ export class ArticleService {
                 },
                 comments: {
                     select: {
-                        content: true
-                    },
-                    include: {
+                        content: true,
                         user: {
                             select: {id: true, name: true}
                         }

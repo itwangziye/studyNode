@@ -2,8 +2,6 @@ import 'dotenv/config'
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, Logger } from '@nestjs/common'    // ← 要 import 什么?提示:校验管道 + 日志
 import { AppModule } from './app.module'
-import { TransformInterceptor } from './common/interceptors/transform.interceptor'
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter'
 import {SwaggerModule, DocumentBuilder} from '@nestjs/swagger'
 
 
@@ -13,10 +11,6 @@ async function bootstrap() {
 
   // ① CORS:允许前端跨域(允许所有源)
   app.enableCors({origin: "*"})
-
-  app.useGlobalInterceptors(new TransformInterceptor())
-
-  app.useGlobalFilters(new AllExceptionsFilter())
 
   // ② ValidationPipe:全局校验 DTO
   app.useGlobalPipes(
