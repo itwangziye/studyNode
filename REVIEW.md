@@ -1767,3 +1767,43 @@ providers: [{ provide: APP_INTERCEPTOR, useClass: TransformInterceptor }]
 | macOS grep 把日志文件当二进制静默不输出 | Nest 默认日志带 ANSI 颜色字节 → `grep -a` 强制文本;根治:全 JSON 输出 |
 | `node --watch`/nohup 后台进程被环境回收 | 用常驻后台任务方式跑,跨回合存活 |
 
+---
+
+## 关 54:监控指标(Prometheus + Grafana)(阶段B)
+
+### RED 三要素(监控接口就看这三个字母)
+
+| 字母 | 含义 | Prometheus 表达式 |
+|---|---|---|
+| **R**ate | 请求量/QPS | `sum by (route) (rate(http_requests_total[1m]))` |
+| **E**rror | 错误率 | `sum(rate(http_requests_total{code=~"4..\|5.."}[1m])) / sum(rate(http_requests_total[1m]))` |
+| **D**uration | 延迟 | `histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))` |
+
+**为什么不是统计日志/写 MySQL 算指标**:日志查 P99 = 每次全量捞+排序(O(全量),算不过来);写 MySQL = 每请求一次 INSERT,高 QPS 下监控反噬业务。正解=**预先聚合 + 纯内存**:请求发生时原子记账,查询 O(1) 读现成。
+
+### 直方图桶 vs 全量存储(面试高频)
+
+不存每个请求的具体耗时,存**桶**:`{le="10"} 830` 表示 ≤10ms 的 830 个。P99 = 从最快桶往上数到 99% 落在哪。**用极小精度损失换 O(桶数) 的查询成本**——和 HyperLogLog/布隆过滤器同族思想。监控要"随时能看",不是"准到小数点后三位"。
+
+### 踩坑铁律(本关全踩过)
+
+1. **标签必须声明**:`inc/observe` 传的标签必须在指标定义 `labelNames` 里声明过——prom-client 运行时强校验,没声明直接 throw → **所有接口 500**。根因:Counter 声明了 labelNames 但 Histogram 漏了,而 observe 带标签 → 每个请求炸。
+2. **打点不能杀死业务**:打点代码必须 try-catch——监控挂了业务不能死(丢一个点无所谓)。
+3. **/metrics 豁免**:全局拦截器会把响应包成 JSON 壳,Prometheus 只认裸文本 → 拦截器里 `if (request.url.startsWith('/metrics')) return data`。
+4. **Content-Type 必须是 text/plain**:NestJS 返回字符串默认 text/html,Prometheus 拒收(`received unsupported Content-Type`)。加 `@Header('Content-Type','text/plain')`。
+5. **标签基数爆炸**:label 用 `request.url` 会把 `/articles/1`、`/articles/2` 变成无限标签撑爆 Prometheus。用 `request.route?.path`(路由模板 `/articles/:id`)。
+6. **rate 是变化率**:流量停了曲线归零——"没数据"常常是"没流量",不是配置错。
+7. **失败请求打点必须在过滤器**:拦截器 tap 只在成功时触发,404/500 在 AllExceptionsFilter 补(count code=status)。
+
+### 生产保护
+
+- 内网访问只是第一层(内网≠安全);**要鉴权**:Prometheus 用 basic_auth/token(bearer_token),和业务接口 JWT 同一套思路。
+- 监控入口(/metrics、/health)是运维面,不进业务模块,放 `common/`。
+
+### Docker 运维速记
+
+- daemon 挂了 → 容器全 Exited 但数据不丢 → `open -a Docker` 重启 → `docker start <容器>`。
+- 镜像拉不动 → DaoCloud 加速源:`docker.m.daocloud.io/prom/prometheus`。
+- Grafana 数据源:容器内访问宿主机 Prometheus 用 `http://host.docker.internal:9090`。
+- 本地起容器:`docker run -d --name prometheus -p 9090:9090 -v <yml>:/etc/prometheus/prometheus.yml prom/prometheus`。
+

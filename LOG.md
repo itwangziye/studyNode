@@ -1369,3 +1369,70 @@ JwtAuthGuard extends AuthGuard("jwt") {
 ### 💬 一句话总结
 
 > 今天最大的认知变化:**日志不是打给人看的,是打给机器查的**——结构化字段+requestId 贯穿,把"凌晨两点的万人瀑布"变成"grep 一条命令的单请求链路";而 ALS 教会我的底层原理是:并发世界里上下文不能存公共位置,要跟着执行流走。
+
+---
+
+## Day 24(2026-08-17):开工复习 7 题 + 关 54 监控指标通关
+
+### 开工复习(4过2半对1补问,三天间隔后强留存)
+
+| 题 | 判定 | 备注 |
+|---|---|---|
+| Q1 Lua 原子 | ⚠️→✅ | 第四次:点出 GET 成功✅但"同时拿到锁"时序糊。补讲三环(GET成功→缝隙过期→del删错)。**第五次复验全过,L0→L1** |
+| Q2 JSON DSL | ✅ 毕业 | must 双引号/字段名全对,笔误 nest→nuest(手滑类)。S连击3回3天轮 |
+| Q3 漏await | ✅ 根治 | pending→truthy→JSON.parse语法错误(SyntaxError)→500。三次答错后终于说对,S连击4 |
+| Q4 ALS | ⚠️→✅ | 前半对,"根据上下文"循环论证→补讲机制。**复验自创"闭包变量"类比(L0→L1)** |
+| Q5 select/include | ✅ L1 | 二选一铁律+user塞进select |
+| Q6 Node并发 | ✅ L1 | 因果扳正:主线程派活→不等→处理别的→线程池完毕接管 |
+| Q7 FOR UPDATE | ✅ L2 | 默写干净(from对!)+语义全对(读+锁/不改/commit释放) |
+
+> 🎉 三天间隔后 4 过,漏await/JSON DSL/Node并发三大里程碑。08-17 开考当日清零。
+
+### 关 54:监控指标 Prometheus + Grafana(通关 🎓)
+
+**自己写**:MetricsService(计数器 http_requests_total + 直方图 http_request_duration_seconds)/ TransformInterceptor 打点(成功)+ /metrics 豁免 / AllExceptionsFilter 打点(失败)/ prometheus.yml / Grafana 数据源+面板。
+
+**实测链**:/metrics 裸文本 → targets up → Prometheus 采到按路由/状态码分的数据 → 刷 60 秒流量 → Grafana 曲线(QPS 0.4~1.3、404 计数 38)。
+
+**通关追问**:Q1 code!="200" 为什么不行(✅ 3xx/403/429 不算错)/ Q2 为什么桶不算全量(⚠️ 补:桶把算 P99 成本从 O(全量) 降到 O(桶数))/ Q3 保护(⚠️ 内网只是第一层,要 basic_auth/token 鉴权)。
+
+### 踩坑实录
+
+| 坑 | 教训 |
+|---|---|
+| prom-client 标签没声明就传 → 所有接口 500 | inc/observe 的标签必须在 labelNames 声明过,运行时强校验 |
+| 打点抛异常杀死业务请求 | try-catch 包打点,监控绝不能拖垮业务 |
+| /metrics 被全局拦截器包成 JSON 壳 | 拦截器按 url 放行 /metrics |
+| Prometheus 拒收 text/html | controller 加 @Header('Content-Type','text/plain') |
+| request.url 当标签 → 基数爆炸 | 用 request.route?.path 路由模板 |
+| rate 曲线 0/空白 | 不是没数据是没流量,rate 算变化率 |
+| Docker daemon 挂 → 全容器 Exited | open -a Docker 重启,容器数据不丢 |
+| 镜像拉不动 | DaoCloud 加速源 docker.m.daocloud.io |
+
+### 📈 能力跃迁
+
+| 维度 | 之前 | 现在 |
+|---|---|---|
+| 监控认知 | 日志=一切 | 日志(查单请求明细) vs 指标(看全局趋势)分家,RED 三要素 |
+| 埋点 | 无 | 计数器+直方图桶,预先聚合,O(1) 查询 |
+| 运维 | 不知道/没数据 | 能判断"没数据=没流量"、Docker 容器重启、内网+鉴权保护监控入口 |
+
+### 🎯 明天计划
+
+- 关 55:健康检查 + 优雅停机(/health 探针、SIGTERM 排空连接)
+- 08-18 到期:关50缓存一致性 / 关51幂等 / bool四子句(逾期)
+
+### 💬 一句话总结
+
+> 今天最大的认知变化:**指标是"预先聚合"的账本,不是"查询时现算"的报告**——请求发生时用微秒级原子操作记账(计数器+1、耗时丢进桶),看板读的是现成的数。这和"日志查明细"是两种工具:日志回答"这一个请求怎么了",指标回答"整个系统健不健康"。
+
+### 🌙 下班抽考(3过1半对)
+
+| 知识点 | 判定 | 备注 |
+|---|---|---|
+| 关54 RED+Counter/Histogram分工 | ✅ | RED三字母全对;Counter算R/E,Histogram算D(P99)。L1→L2 |
+| 关54 为什么预先聚合 | ✅ | 高QPS写MySQL拖垮业务库——监控反噬业务 |
+| 关50 缓存一致性方案A | ✅ | 旧值被并发读请求回填,缓存永远旧。L1→L2 |
+| 关51 幂等4种方案 | ⚠️ | 本质✅但只说出2种(幂等key),前端置灰当方案。补讲:唯一约束/token/幂等key/状态机;前端防手滑≠后端幂等。重置L0,08-18必考 |
+
+> ⚠️ 明天必考:幂等 4 种方案全说出(重置 L0)+ 关54 监控踩坑铁律。
