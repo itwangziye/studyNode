@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { LoggerService } from '../logger/logger.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 /**
  * 统一响应格式契约:
@@ -26,7 +27,8 @@ import { LoggerService } from '../logger/logger.service';
 export class AllExceptionsFilter implements ExceptionFilter {
 
   constructor(
-    private readonly logger: LoggerService
+    private readonly logger: LoggerService,
+    private readonly metrics: MetricsService
   ) {}
 
   // exception: 实际抛出的异常对象(unknown 类型,要先 instanceof 判断)
@@ -39,6 +41,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // ① 分类处理:提取状态码 + 友好消息
     let status: number;
     let message: string;
+
+   
 
     if (exception instanceof HttpException) {
       // —— 已知异常:NestJS 内置异常(NotFoundException/BadRequestException/...)
@@ -66,8 +70,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
         method: request.method,
         url: request.url,
         status,
-        message
+        message,
+        err: exception instanceof Error ? exception.stack : String(exception)   // ← 加回这行
       })
+    }
+
+
+    try {
+        const route = request.route?.path ?? request.url.split('?')[0]   // 和拦截器同一套路由模板
+        this.metrics.requestsTotal.inc({ method: request.method, route, code: String(status) })
+    } catch {
+        this.logger.warn('监控打点失败', { url: request.url })            // 老规矩:打点死了业务不能死
     }
 
     // ② 输出统一格式(注意 code 用 HTTP 状态码,和 status 一致)

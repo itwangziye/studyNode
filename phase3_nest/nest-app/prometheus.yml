@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: nest-app
+    scrape_interval: 5s      # 每 5 秒来拉一次(先短一点,方便看到数据动)
+    static_configs:
+      - targets: ['host.docker.internal:3000']   # 容器内访问宿主机,Docker for Mac 专用地址
