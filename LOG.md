@@ -1317,3 +1317,55 @@ JwtAuthGuard extends AuthGuard("jwt") {
 | 关14/42 漏await后果 | ⚠️ | 核心对(truthy),但后果又答"返回空对象"→精确:JSON.parse("[object Promise]")抛SyntaxError→500 |
 
 > ⚠️ 明天必考:Lua 原子为什么(迁移场景)+ 漏await精确后果。关52刚学的概念,Lua迁移是首抽没接住——明天上班先补这两枪。
+
+---
+
+## Day 23(2026-08-14):开工复习 6 题 + 关 53 结构化日志通关
+
+### 开工复习(2过4半对,不干净)
+
+| 题 | 判定 | 备注 |
+|---|---|---|
+| Q1 Lua 为什么必须原子 | ❌ 第三次答偏 | 讲出"A过期→B抢→A删B锁"场景✅,但缺"GET成功那一刻还是我的→缝隙易主"。补讲 T0-T4 时间线。留 L0,08-15 必考 |
+| Q2 MQ nack | ✅ 连击2 | 异常 nack/错用 ack→标记完成不重投 |
+| Q3 JSON DSL | ⚠️ | 字段名 title✅,但 must 键又漏双引号 |
+| Q4 漏await后果 | ⚠️ 进步 | 从"返回空对象"扳正为"解析报错",但仍缺 SyntaxError 精确类型 |
+| Q5 Node 并发 | ⚠️ | "线程池去派活"因果反了(派活的是主线程),补讲老板/打工人/传话筒 |
+| Q6 三并发问题 | ✅ L1→L2 | 三个全对,脏读"未提交+回滚"讲清 |
+
+### 关 53:结构化日志 + 请求链路追踪(通关 🎓)
+
+**四件套自建**:①RequestIdMiddleware(透传优先+生成+响应头回传) ②RequestContextService(AsyncLocalStorage 行李箱,run 包 next) ③LoggerService(pino+mixin 自动注入 requestId) ④TransformInterceptor 升级(结构化访问日志,迁 APP_INTERCEPTOR)。用户手写:中间件三步逻辑/context service/module×3/拦截器改造/异常过滤器迁移。
+
+**实测链**:响应头验证(不同ID/透传沿用)→ ALS 并发隔离(demo-req-A/B 各拿各的)→ jq 数值筛选(duration>5ms)→ **张三闭环**(404 请求按 requestId 搜到 warn 日志:status/message/method/url 全带)。
+
+**通关追问**:Q3 透传为什么(✅ A调B一张车票坐到底)/ Q1 定位流程(⚠️ 实测暴露失败请求链路为空→补异常日志)/ Q2 ALS vs 全局变量(⚠️ 只给结论没给机制,补讲"跟不跟人走",08-15 复验)。
+
+### 踩坑实录
+
+| 坑 | 教训 |
+|---|---|
+| 3 个残留 start:dev 幽灵进程抢 dist/端口 | 改代码不生效先查 `ps aux \| grep start:dev`;同一份 dist 只能有一个主人 |
+| findOne 真 bug:comments 同时 select+include | 详情接口早就 500 了没人发现——改完必须回归测;Prisma 同层二选一铁律 |
+| duration 写成 "103ms" 字符串 | 数值不带引号铁律从 ES 迁移到日志;字符串没法 jq 筛选/算 P99 |
+| main.ts new 拦截器报 TS2554 | 全局组件带依赖 → APP_INTERCEPTOR/APP_FILTER 令牌注册,容器替你 new |
+| 迁移类改动做一半(APP_FILTER 只删旧没接新) | 口诀:先接新再拔旧,一口气做完立刻编译验证 |
+| macOS grep 把混 ANSI 的日志当二进制静默 | `grep -a`;根治=全 JSON 输出 |
+
+### 📈 能力跃迁
+
+| 维度 | 之前 | 现在 |
+|---|---|---|
+| 排障方式 | tail 日志肉眼扫,分不清哪行是谁的 | requestId 串链,grep 一条命令定位单请求全程 |
+| 请求上下文传递认知 | 只会参数层层传/想到全局变量(并发必炸) | ALS 行李箱跟执行流走,零侵入 |
+| NestJS 全局组件 | main.ts 自己 new | APP_* 令牌注册走 DI 容器 |
+
+### 🎯 明天计划
+
+- 🔴 开工必考:Lua 原子(GET成功缝隙)/ JSON must 双引号 / Node 并发(主线程派活)
+- 关 53 新增复习项:ALS vs 全局变量机制、select/include 同层
+- 关 54:监控指标(Prometheus + Grafana,RED 指标)
+
+### 💬 一句话总结
+
+> 今天最大的认知变化:**日志不是打给人看的,是打给机器查的**——结构化字段+requestId 贯穿,把"凌晨两点的万人瀑布"变成"grep 一条命令的单请求链路";而 ALS 教会我的底层原理是:并发世界里上下文不能存公共位置,要跟着执行流走。

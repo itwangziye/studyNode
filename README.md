@@ -137,11 +137,11 @@
 | 51 | 幂等性设计 | 幂等 key、防重复提交、MQ 消费者去重(联动关45 ack) | 写出"同一请求发3次只创建1条文章"幂等接口 | ✅ |
 | 52 | 分布式锁进阶(超越 SET NX) | 锁过期两难→看门狗续命;锁归属(token+Lua原子校验);主从异步failover丢锁→Redlock多数派→争议;选型(普通单Redis/钱ZK/秒杀Redis原子扣减) | 闭卷讲清"主从切换为啥失效+三层锁演进" | ✅ |
 
-#### 阶段B:生产运维与可观测性(关 53-57)
+#### 阶段B:生产运维与可观测性(关 53-57) ⏳ 进行中 (2026-08-14 ~ )
 
-| 关 | 主题 | 训练点 | 通关标准 |
-|---|---|---|---|
-| 53 | 结构化日志 + 请求链路追踪 | pino/winston + requestId 贯穿;traceId 跨服务 | 每个请求打唯一 id,日志按 id 串起来 |
+| 关 | 主题 | 训练点 | 通关标准 | 状态 |
+|---|---|---|---|---|
+| 53 | 结构化日志 + 请求链路追踪 | pino/winston + requestId 贯穿;traceId 跨服务 | 每个请求打唯一 id,日志按 id 串起来 | ✅ 2026-08-14:RequestId中间件(透传优先)+AsyncLocalStorage行李箱+pino mixin自动注入;APP_INTERCEPTOR/APP_FILTER令牌注册(DI);异常分级warn/error;揪出findOne select/include同层真bug |
 | 54 | 监控指标(Prometheus + Grafana) | RED 指标(Rate/Error/Duration);直方图 vs 计数器 | Grafana 看到文章接口 QPS/P99/错误率 |
 | 55 | 健康检查 + 优雅停机 | /health 探针、K8s liveness/readiness;SIGTERM 排空连接 | kill 进程时,在途请求处理完才退出 |
 | 56 | 性能瓶颈定位实战 | clinic.js/火焰图;慢 SQL EXPLAIN;回扣关43 N+1 | 给慢接口做性能剖析,指出瓶颈并优化 |

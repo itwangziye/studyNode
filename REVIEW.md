@@ -1707,3 +1707,63 @@ A→master SET lock NX→master回OK(A以为抢到)→准备同步从→master�
 **三层锁演进**(面试答"分布式锁怎么实现"):① SET NX 基础版(单点有 failover 缺陷)→ ② 看门狗+token 进阶版(治过期+归属)→ ③ Redlock/共识算法终极版(治 failover,争议取舍)。
 
 🔥 **锁只是优化,不是绝对正确性保障**——关键业务(钱/库存)永远要 DB 约束兜底(唯一约束/version/乐观锁)。锁挂了 DB 还能拦。
+
+---
+
+## 关 53:结构化日志 + 请求链路追踪(阶段B)
+
+### 为什么:两个问题 → 两个武器
+
+| 问题 | 病根 | 武器 |
+|---|---|---|
+| 脚本没法统计/检索日志 | 纯文本是给人看的,机器解析不了 | **结构化日志**(每行一个 JSON,字段可索引) |
+| 万人瀑布里分不清哪行是哪个请求的 | 日志没有"身份证" | **requestId 贯穿**(每请求一个 uuid,全链路携带) |
+
+凌晨两点定位张三的 500:张三报响应头 `x-request-id` → `grep '该id' 日志文件` → 该请求的[访问日志+业务日志+异常日志]成一条链 → 断在哪一看便知。跨服务:A 调 B 把 requestId 放 `X-Request-Id` 头**透传**(一张车票坐到底,这就是 traceId 原理;换了 ID 两段链就接不上)。
+
+### 四件套架构
+
+```
+请求 → ① RequestIdMiddleware:头透传优先,没有才 crypto.randomUUID();setHeader 回传响应头
+     → ② AsyncLocalStorage 行李箱:run({requestId}, () => next()) —— next 必须在 run 回调【内部】
+     → ③ 业务层零传参:this.requestContext.getRequestId() 任意层任意时刻拿到自己的
+     → ④ pino mixin:每行日志自动注入 requestId(业务代码一行不用改)
+```
+
+### ALS:为什么全局变量/Redis 都不行(面试高频)
+
+- **全局变量**:公共存储位置——A 写入 → await 让出 → B 覆盖 → A 回来读到 B 的(对照实验:`phase3_nest/als-demo.ts` 铁证)
+- **Redis**:同样的覆盖竞态 + 按 requestId 当 key 死循环(拿不到才来找的)+ 每行日志一次网络往返的性能灾难
+- **ALS 正解**:数据**绑定在执行流上**——run() 时 Node 给异步链发跟踪标记,await 恢复时自动还原这条链自己的上下文。**不是"存哪"的区别,是"跟不跟人走"的区别**
+- 实例必须全局唯一(应用一个 AsyncLocalStorage 实例,内容按执行流隔离;每次 new = 读到空箱子)
+
+### pino 关键点
+
+- **mixin**:每行日志打印前调用的函数,返回值合并进日志字段——ALS 的收银台
+- **永远输出原始 JSON,不美化**——存储给机器,人看时 `| npx pino-pretty`
+- **数值字段不能带单位字符串**:`duration: "103ms"` ❌ → jq 筛选/算 P99 全废(字典序比较);`duration: 103` ✅(单位交给字段名)。和关46 JSON DSL"数值不带引号"同一条铁律
+- 消息(msg)保持稳定("HTTP请求完成"),数据全进字段——msg 是检索/聚合的锚点
+
+### APP_INTERCEPTOR / APP_FILTER 令牌注册(全局组件带依赖的正确姿势)
+
+```ts
+providers: [{ provide: APP_INTERCEPTOR, useClass: TransformInterceptor }]
+```
+
+`main.ts` 里 `new TransformInterceptor()` 自己 new = **绕过 DI 容器**,构造函数依赖没人给 → TS2554 报错。令牌注册 = 类交给容器实例化,依赖自动注入。家族:`APP_FILTER`/`APP_GUARD`/`APP_PIPE` 同套路。
+
+### 异常日志分级(失败请求的链路不能空)
+
+- **已知异常(4xx)**:`logger.warn('请求异常-已知', { method, url, status, message })`——客户端的问题,不带堆栈
+- **未知异常(5xx)**:`logger.error('请求异常', { ..., err: exception.stack })`——我们的问题,堆栈只进日志;**响应给客户端的永远是脱敏文案**(安全红线)
+- 坑:拦截器 `tap(() => ...)` 只在成功时触发——失败请求的访问日志必须靠过滤器补,否则链路断
+
+### 本关实战踩坑实录
+
+| 坑 | 现象/解法 |
+|---|---|
+| 残留 `pnpm start:dev` 幽灵进程 | 终端关了进程没死,3 个 watcher 抢 dist/ 抢端口 →"改代码不生效"。排查:`ps aux \| grep start:dev`。同一份 dist 只能有一个主人 |
+| **findOne 真 bug**:comments 同时用 `select`+`include` | Prisma 铁律:同层二选一。详情接口早就 500 了没人发现——改完必须回归测,结构化验证一跑才现形 |
+| macOS grep 把日志文件当二进制静默不输出 | Nest 默认日志带 ANSI 颜色字节 → `grep -a` 强制文本;根治:全 JSON 输出 |
+| `node --watch`/nohup 后台进程被环境回收 | 用常驻后台任务方式跑,跨回合存活 |
+
