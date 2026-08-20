@@ -75,14 +75,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       })
     }
 
-
-    try {
+    if (!request.url.startsWith('/metrics') && !request.url.startsWith('/health')) {
+      try {
         const route = request.route?.path ?? request.url.split('?')[0]   // 和拦截器同一套路由模板
         this.metrics.requestsTotal.inc({ method: request.method, route, code: String(status) })
-    } catch {
-        this.logger.warn('监控打点失败', { url: request.url })            // 老规矩:打点死了业务不能死
+      } catch {
+          this.logger.warn('监控打点失败', { url: request.url })            // 老规矩:打点死了业务不能死
+      }
     }
-
+    
     // ② 输出统一格式(注意 code 用 HTTP 状态码,和 status 一致)
     response.status(status).json({
       code: status,

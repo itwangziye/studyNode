@@ -150,4 +150,8 @@ export class RedisService implements OnModuleDestroy {
   async zRevRange(key: string, start: number, stop: number): Promise<string[]> {
     return await this.client.zrevrange(key, start, stop, "WITHSCORES")
   }
+
+  async ping() {
+    return await this.client.ping()
+  }
 }

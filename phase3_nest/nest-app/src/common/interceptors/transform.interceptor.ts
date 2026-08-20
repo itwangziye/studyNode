@@ -20,15 +20,19 @@ export class TransformInterceptor implements NestInterceptor {
         return next.handle().pipe(
             tap(() => {
                 this.logger.info('HTTP请求完成', {name: TransformInterceptor.name, method: request.method, url: request.url, duration: Date.now() - time })
-                try {
-                    this.metrics.requestsTotal.inc({method: request.method, route, code: '200'})
-                    this.metrics.requestDuration.observe({method: request.method, route}, Date.now() - time)
-                } catch (error) {
-                    this.logger.warn('监控打点失败', { url: request.url })
+
+                if (!request.url.startsWith('/metrics') && !request.url.startsWith('/health')) {
+                    try {
+                        this.metrics.requestsTotal.inc({method: request.method, route, code: '200'})
+                        this.metrics.requestDuration.observe({method: request.method, route}, Date.now() - time)
+                    } catch (error) {
+                        this.logger.warn('监控打点失败', { url: request.url })
+                    }
                 }
+                
             }),
             map((data) => {
-                if (request.url.startsWith('/metrics')) return data
+                if (request.url.startsWith('/metrics') || request.url.startsWith('/health')) return data
                 return { code: 200, message: "success", data }
             })
         )

@@ -19,10 +19,11 @@ import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { MetricsModule } from './common/metrics/metrics.module';
+import { HealthModule } from './common/health/health.module';
 
 
 @Module({
-  imports: [PrismaModule, RedisModule, LoggerModule, MetricsModule, RequestContextModule, ElasticsearchModule, RabbitmqModule, KafkaModule, TasksModule, AuthModule, ArticlesModule, CommentModule],
+  imports: [PrismaModule, RedisModule, LoggerModule, MetricsModule, HealthModule, RequestContextModule, ElasticsearchModule, RabbitmqModule, KafkaModule, TasksModule, AuthModule, ArticlesModule, CommentModule],
   controllers: [AppController],
   providers: [
     AppService,

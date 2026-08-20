@@ -36,6 +36,27 @@ async function bootstrap() {
   // ③ 启动
   const port = process.env.PORT ?? 3000
   await app.listen(port)
+
+    // ⑤ 优雅停机:接管 SIGTERM,顺序 = 先排空在途请求,再关依赖(企业标准三步曲)
+    const server = app.getHttpServer()            // 拿到底层 Node http server(Express 里面那颗)
+
+    const shutdown = async (signal: string) => {
+        console.log(`收到${signal}:停止接新连接,排空在途请求...`)
+        server.close(async () => {                   // ① 不再接受新连接;等在途请求全部完成后才进这个回调
+            console.log('在途请求已排空,关闭依赖(触发 onModuleDestroy 钩子链)...')
+            await app.close()                          // ② 手动触发钩子链:Prisma/Redis/ES/MQ 依次断开
+            process.exit(0)                            // ③ 干净退出
+        })
+        setTimeout(() => {                           // ④ 兜底:10秒排不完就强制退,不能比 K8s 宽限期(30s)还能拖
+            console.error('排空超时,强制退出')
+            process.exit(1)
+        }, 10000).unref()                            // unref:这个定时器自己不阻止进程退出
+    }
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'))   // kill / K8s 删 Pod
+    process.on('SIGINT', () => shutdown('SIGINT'))     // Ctrl+C,同一个 handler
+
+
 }
 
 bootstrap()
