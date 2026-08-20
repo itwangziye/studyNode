@@ -1807,3 +1807,71 @@ providers: [{ provide: APP_INTERCEPTOR, useClass: TransformInterceptor }]
 - Grafana 数据源:容器内访问宿主机 Prometheus 用 `http://host.docker.internal:9090`。
 - 本地起容器:`docker run -d --name prometheus -p 9090:9090 -v <yml>:/etc/prometheus/prometheus.yml prom/prometheus`。
 
+## 关 55:健康检查 + 优雅停机(阶段B,进行中)
+
+### Nest 模块三个数组各管什么(08-18 连踩三坑)
+
+> 404(controller 进 providers)→ 启动炸(exports 放 controller)→ 污染漏网(只豁免 map 忘 tap)。三坑同源。
+
+一句话:**controller 管路由、provider 管注入、exports 只能导出 provider**。
+- controller 不进 `controllers` 数组 = 路由不注册 = **404**(关 54 MetricsController、关 55 HealthController 各踩一次——"路由 404 先查 controllers 数组"要成条件反射)。
+- exports 放 controller = 启动直接 `UnknownExportException`(controller 不是 provider,没人注入它)。
+- MetricsModule 的 exports 能放 MetricsService,是因为它被拦截器/过滤器注入——@Global+exports 是给"被跨模块注入的 Service"用的。
+- 拦截器里 `map`(响应包壳)和 `tap`(打点)是**两个独立管道操作**,豁免要两边都写。
+
+### 探针为什么绝不能上鉴权(🔥 追问半对点)
+
+发 /health 请求的是 **K8s/负载均衡器,不是人——它们没有 token,也不会登录**。给 /health 上 JwtAuthGuard = 探针永远 401 = K8s 判定实例死亡 = 无限重启。所以不是"不需要关联",是**绝不能关联**。/health 是探针、/metrics 是监控指标,两者都是"运维面"入口。
+
+### 守卫全局化后的豁免:@Public() + Reflector(🔥 追问没答出,待实现)
+
+守卫改成 `APP_GUARD` 全局注册后,靠"没贴就不拦"的局部注册逻辑失效。企业标准做法(和 @Roles + RolesGuard 同一个模式,回扣关 19):
+1. `@Public()` 装饰器 = `SetMetadata('isPublic', true)`——在路由上留记号
+2. JwtAuthGuard.canActivate 里用 Reflector 读路由 metadata:`isPublic === true` 直接放行
+3. /health、/metrics、/auth/login 贴上 @Public()
+核心:**装饰器留标记,守卫读标记**。
+
+### 🔥 实验三重坑(08-19,今天最贵的工程教训:反常结果先怀疑仪器)
+
+1. **`lsof -ti:3000` 误杀 curl**:lsof 匹配"所有跟 3000 端口相关的 socket",**包括 curl 的客户端连接** → `kill $(lsof -ti:3000)` 把发请求的 curl 一并 SIGTERM(exit 143、输出 0 字节)。杀进程只杀监听者:`lsof -ti:3000 -sTCP:LISTEN`。
+2. **代理环境变量**:HTTP_PROXY=127.0.0.1:7890 且 NO_PROXY 没配 localhost → curl 走 Clash。实验加 `curl --noproxy '*'` 消除变量。
+3. **手动实验假证据**:手敲 curl/kill 的时间差=手速。kill 迟到 → 请求先完成 → 看起来像"优雅停机",其实是假象。**时序敏感实验(并发/超时/关停)必须脚本化控时序**。
+
+### 信号三兄弟(一次钉死)
+
+| 信号 | 谁发的 | 能接吗 |
+|---|---|---|
+| SIGTERM | `kill` / K8s 停机 | ✅ handler 接住(不注册 handler = 默认立即终止,机会白给) |
+| SIGINT | Ctrl+C | ✅ 能接(和 SIGTERM 共用 shutdown handler) |
+| SIGKILL | `kill -9` / K8s 宽限期(30s)到点 | ❌ **不可捕获**——handler/排空/钩子链全跑不了,所以 10s 兜底必须抢在它之前 |
+
+### 🔥 服务生命周期全景图(08-19 用户钦点重点,隔期必复述)
+
+> 复习方式:闭卷画/讲两条线——"一个请求的一生"+"一个服务的一生"。忘了细节顺着这条时间线推。
+
+```
+出生:  启动→连依赖→路由注册→listen→探针curl /health→readiness 200
+       →K8s加入负载均衡名单→流量从此刻才开始来
+干活:  用户→负载均衡(按名单分发)→3000端口
+       →RequestId中间件(车票进ALS)→JwtAuthGuard(路由级)→ValidationPipe
+       →拦截器前半(计时)→Controller→Service(Prisma/Redis/ES)
+       →拦截器后半(map包壳/tap打点)→响应
+       异常:anything throw→AllExceptionsFilter(4xx warn/5xx error+堆栈+失败打点)
+       常客:Prometheus拉/metrics + K8s探/health(双豁免打点,不污染QPS)
+退休:  ①摘流量(从名单划掉,新请求不再来) ②SIGTERM→shutdown handler:
+       server.close(停新连接+等在途排空)→app.close(钩子链断依赖)→exit(0)
+       兜底10s强退 exit(1)——必须赶在K8s宽限期30s的SIGKILL之前
+```
+
+三个最易糊的点:
+1. **流量不是直接打端口**——先到负载均衡,它按"健康实例名单"分发;摘流量=从名单划掉,不是防火墙挡。停机先摘流量再SIGTERM,保证排空窗口无新流量撞门。
+2. **readiness通过≠流量马上来**——隔着"探针确认+入名单",刚启动有几秒"活着但没人来"的正常窗口。
+3. **退休顺序不能反**——先拔依赖再排空(Nest自动版)=在途请求断粮腰斩;先排空再拔依赖(手写三步曲)=干完活体面退。两版都实测过。
+
+### 关 55 追问盲区(08-18,复述待验)
+
+- **三死法没说透**:串行 await 的死法是①总耗时=之和(探针1秒预算被吃穿)②第一个 reject 整个函数 throw、第二个检查根本不执行;Promise.all 的死法是**一个 reject 立刻整体 reject,另一个的结果被丢弃**——知道"有事"不知道"谁挂了";allSettled 没有死法(它就是正确工具),超时是"依赖卡住"另一个维度,用 race 叠加。
+- **三数组职责混**:controllers 管路由(不进数组=404)、providers 管注册(进 DI 容器可被注入)、exports 管开放(哪些 provider 允许被别的模块注入,exports 只认 provider,放 controller 启动炸)。
+- 健康检查超时:依赖"挂掉"立刻 reject,但"卡住"(如 ioredis 自动重连)会挂 6.7s 拖垮探针——`Promise.race([检查, 1秒定时器reject])`,实测 6.7s→1.004s。
+- 待办:RedisService 监听 `client.on('error')` 接 LoggerService(现在断连只有 ioredis 的 Unhandled error event 刷屏)。
+

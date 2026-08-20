@@ -143,7 +143,7 @@
 |---|---|---|---|---|
 | 53 | 结构化日志 + 请求链路追踪 | pino/winston + requestId 贯穿;traceId 跨服务 | 每个请求打唯一 id,日志按 id 串起来 | ✅ 2026-08-14:RequestId中间件(透传优先)+AsyncLocalStorage行李箱+pino mixin自动注入;APP_INTERCEPTOR/APP_FILTER令牌注册(DI);异常分级warn/error;揪出findOne select/include同层真bug |
 | 54 | 监控指标(Prometheus + Grafana) | RED 指标(Rate/Error/Duration);直方图 vs 计数器 | Grafana 看到文章接口 QPS/P99/错误率 | ✅ 2026-08-17:prom-client打点(计数器+直方图桶);拦截器成功打点+过滤器失败打点(/metrics豁免+text/plain);Prometheus容器采集+Grafana面板;踩坑:标签须声明/打点try-catch/基数爆炸用路由模板 |
-| 55 | 健康检查 + 优雅停机 | /health 探针、K8s liveness/readiness;SIGTERM 排空连接 | kill 进程时,在途请求处理完才退出 |
+| 55 | 健康检查 + 优雅停机 | /health 探针、K8s liveness/readiness;SIGTERM 排空连接 | kill 进程时,在途请求处理完才退出 | ✅ 2026-08-19:readiness真检查(Promise.allSettled并发+race超时1s+503分诊DB/Redis);SIGTERM三步曲(server.close排空→app.close钩子链→exit,兜底10s抢在K8s宽限30s前);实验三重坑(lsof误杀curl/代理变量/手动实验假证据);生命周期全景图入隔期复习 |
 | 56 | 性能瓶颈定位实战 | clinic.js/火焰图;慢 SQL EXPLAIN;回扣关43 N+1 | 给慢接口做性能剖析,指出瓶颈并优化 |
 | 57 | 压测 + 容量规划 | autocannon/k6;QPS/并发/延迟关系;压出缓存击穿真实效果 | 得出数字:"单机扛多少 QPS,瓶颈在哪" |
 
